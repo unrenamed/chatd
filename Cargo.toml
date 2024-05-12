@@ -8,3 +8,21 @@ edition = "2021"
 [dependencies]
 rpassword = "7.3.1"
 ssh-key = { version = "0.6.3", features = ["std", "crypto", "encryption"] }
+futures = "0.3.30"
+russh = "0.43.0"
+russh-keys = "0.43.0"
+tokio = { version = "1.36.0", features = ["io-std"] }
+anyhow = "1.0.79"
+async-trait = "0.1.77"
+env_logger = "0.11.1"
+log = "0.4.20"
+termion = "3.0.0"
+clap = { version = "3.2", features = ["derive"] }
+tokio-fd = "0.3"
+shell-escape = "0.1"
+ratatui = "0.26.0"
+tui-textarea = "0.4.0"
+terminal-keycode = "1.1.1"
+ansi-to-tui = "4.0.1"
+rand = "0.8.5"
+fnv = "1.0.7"
