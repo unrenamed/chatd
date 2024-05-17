@@ -1,7 +1,7 @@
 use fnv::FnvHasher;
 use std::hash::{Hash, Hasher};
 
-pub fn to_rgb(s: &str) -> (u8, u8, u8) {
+pub fn gen_rgb(s: &str) -> (u8, u8, u8) {
     let mut hasher = FnvHasher::default();
     s.hash(&mut hasher);
     let hash = hasher.finish();
