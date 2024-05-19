@@ -1,6 +1,6 @@
-use ratatui::{backend::CrosstermBackend, Terminal};
-use russh::{server::Session, ChannelId};
 use std::collections::HashMap;
+
+use russh::{server::Session, ChannelId};
 use terminal_keycode::{Decoder, KeyCode};
 use tokio::sync::Mutex;
 
@@ -11,18 +11,16 @@ use crate::{
 
 use super::{command::Command, terminal::TerminalHandle, ClientEvent};
 
-type SshTerminal = Terminal<CrosstermBackend<TerminalHandle>>;
-
 pub struct InputHandler<'a> {
     client_id: &'a usize,
-    clients: &'a Mutex<HashMap<usize, (SshTerminal, ChatApp)>>,
+    clients: &'a Mutex<HashMap<usize, (TerminalHandle, ChatApp)>>,
     events: &'a Mutex<Vec<ClientEvent>>,
 }
 
 impl<'a> InputHandler<'a> {
     pub fn new(
         client_id: &'a usize,
-        clients: &'a Mutex<HashMap<usize, (SshTerminal, ChatApp)>>,
+        clients: &'a Mutex<HashMap<usize, (TerminalHandle, ChatApp)>>,
         events: &'a Mutex<Vec<ClientEvent>>,
     ) -> Self {
         InputHandler {

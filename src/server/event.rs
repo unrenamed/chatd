@@ -1,9 +1,22 @@
-use ratatui::{
-    style::{Color, Style},
-    text::{Line, Span},
-};
-
 use crate::utils::{self, kmp::KMP};
+
+pub enum TextPart {
+    Info(String),
+    InfoDimmed(String),
+    Message(String),
+    MessageHighlighted(String),
+    Username(String),
+}
+
+pub struct StyledText {
+    pub parts: Vec<TextPart>,
+}
+
+impl StyledText {
+    fn new(parts: Vec<TextPart>) -> Self {
+        Self { parts }
+    }
+}
 
 pub enum ClientEvent {
     Connected(ConnectedEvent),
@@ -14,13 +27,13 @@ pub enum ClientEvent {
 }
 
 impl ClientEvent {
-    pub fn format_line(&self, current_username: &str) -> Line {
+    pub fn format(&self, current_username: &str) -> StyledText {
         match self {
-            ClientEvent::Connected(event) => event.format_line(current_username),
-            ClientEvent::Left(event) => event.format_line(current_username),
-            ClientEvent::SendMessage(event) => event.format_line(current_username),
-            ClientEvent::GoAway(event) => event.format_line(current_username),
-            ClientEvent::ReturnBack(event) => event.format_line(current_username),
+            ClientEvent::Connected(event) => event.format(current_username),
+            ClientEvent::Left(event) => event.format(current_username),
+            ClientEvent::SendMessage(event) => event.format(current_username),
+            ClientEvent::GoAway(event) => event.format(current_username),
+            ClientEvent::ReturnBack(event) => event.format(current_username),
         }
     }
 }
@@ -49,69 +62,86 @@ pub struct ReturnBackEvent {
     pub username: String,
 }
 
-pub trait Displayable {
-    fn format_line(&self, current_username: &str) -> Line;
+pub trait Display {
+    fn format(&self, current_username: &str) -> StyledText;
 }
 
-impl Displayable for ConnectedEvent {
-    fn format_line(&self, _: &str) -> Line {
-        Line::from(vec![Span::styled(
-            format!(
-                " * {} joined. (Connected: {})",
-                self.username, self.total_connected
-            ),
-            Style::default().fg(Color::DarkGray),
-        )])
-    }
-}
-
-impl Displayable for LeftEvent {
-    fn format_line(&self, _: &str) -> Line {
-        Line::from(vec![Span::styled(
-            format!(
-                " * {} left. ({})",
-                self.username,
-                utils::datetime::format_distance_to_now(self.session_duration)
-            ),
-            Style::default().fg(Color::DarkGray),
-        )])
-    }
-}
-
-impl Displayable for SendMessageEvent {
-    fn format_line(&self, current_username: &str) -> Line {
-        let (r, g, b) = utils::rgb::gen_rgb(&self.username);
-        let username_span = Span::styled(
-            format!("{}: ", self.username),
-            Style::default().fg(Color::Rgb(r, g, b)),
+impl Display for ConnectedEvent {
+    fn format(&self, _: &str) -> StyledText {
+        let text = format!(
+            " * {} joined. (Connected: {})",
+            self.username, self.total_connected
         );
+        StyledText::new(vec![TextPart::InfoDimmed(text)])
+    }
+}
+
+impl Display for LeftEvent {
+    fn format(&self, _: &str) -> StyledText {
+        let text = format!(
+            " * {} left. ({})",
+            self.username,
+            utils::datetime::format_distance_to_now(self.session_duration)
+        );
+        StyledText::new(vec![TextPart::InfoDimmed(text)])
+    }
+}
+
+impl Display for SendMessageEvent {
+    fn format(&self, current_username: &str) -> StyledText {
+        let mut parts = vec![TextPart::Username(format!("{}: ", self.username))];
 
         let pattern = format!("@{}", current_username);
         let matches = KMP::new(&pattern).search(&self.message);
-        let mut message_spans =
-            utils::message::split_by_indices(&self.message, &matches, pattern.len());
+        let mut message_spans = split_message_by_indices(&self.message, &matches, pattern.len());
 
-        let mut spans = vec![username_span];
-        spans.append(&mut message_spans);
-
-        Line::from(spans)
+        parts.append(&mut message_spans);
+        StyledText::new(parts)
     }
 }
 
-impl Displayable for GoAwayEvent {
-    fn format_line(&self, _: &str) -> Line {
-        Line::from(vec![Span::styled(
-            format!("** {} has gone away: {}", self.username, self.reason),
-            Style::default().fg(Color::White),
-        )])
+impl Display for GoAwayEvent {
+    fn format(&self, _: &str) -> StyledText {
+        let text = format!("** {} has gone away: {}", self.username, self.reason);
+        StyledText::new(vec![TextPart::Info(text)])
     }
 }
 
-impl Displayable for ReturnBackEvent {
-    fn format_line(&self, _: &str) -> Line {
-        Line::from(vec![Span::styled(
-            format!("** {} is back.", self.username),
-            Style::default().fg(Color::White),
-        )])
+impl Display for ReturnBackEvent {
+    fn format(&self, _: &str) -> StyledText {
+        let text = format!("** {} is back.", self.username);
+        StyledText::new(vec![TextPart::Info(text)])
     }
+}
+
+fn split_message_by_indices<'a>(
+    text: &'a str,
+    indices: &[usize],
+    substr_len: usize,
+) -> Vec<TextPart> {
+    let mut spans = Vec::new();
+    let mut prev_index = 0;
+
+    for &index in indices {
+        if index >= text.len() {
+            break;
+        }
+
+        if prev_index < index {
+            spans.push(TextPart::Message(String::from(&text[prev_index..index])));
+        }
+
+        if index + substr_len <= text.len() {
+            spans.push(TextPart::MessageHighlighted(String::from(
+                &text[index..index + substr_len],
+            )));
+            prev_index = index + substr_len;
+        }
+    }
+
+    if prev_index < text.len() {
+        spans.push(TextPart::Message(String::from(&text[prev_index..])));
+    }
+
+    spans
 }

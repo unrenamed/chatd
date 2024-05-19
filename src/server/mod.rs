@@ -1,16 +1,13 @@
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
-use ansi_to_tui::IntoText;
 use async_trait::async_trait;
-use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Layout};
-use ratatui::layout::{Direction, Rect};
-use ratatui::style::{Color, Style};
-use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Clear, Paragraph, Wrap};
-use ratatui::Terminal;
+use crossterm::cursor::{self};
+use crossterm::queue;
+use crossterm::style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor};
+use crossterm::terminal::{Clear, ClearType};
 use russh::{server::*, MethodSet};
 use russh::{Channel, ChannelId};
 use russh_keys::key::PublicKey;
@@ -30,8 +27,6 @@ mod event;
 mod input_handler;
 mod terminal;
 
-type SshTerminal = Terminal<CrosstermBackend<TerminalHandle>>;
-
 static MOTD_FILEPATH: &'static str = "./motd.ans";
 static WHITELIST_FILEPATH: &'static str = "./whitelist";
 
@@ -39,10 +34,11 @@ static WHITELIST_FILEPATH: &'static str = "./whitelist";
 pub struct AppServer {
     // per-client connection data
     connection: ServerConnection,
-    // shared server state
-    clients: Arc<Mutex<HashMap<usize, (SshTerminal, ChatApp)>>>,
+    // shared server state (these aren't copied, only the pointers are)
+    clients: Arc<Mutex<HashMap<usize, (TerminalHandle, ChatApp)>>>,
     events: Arc<Mutex<Vec<ClientEvent>>>,
     whitelist: Arc<Mutex<Vec<PublicKey>>>,
+    motd: Arc<Mutex<String>>,
 }
 
 impl AppServer {
@@ -52,61 +48,98 @@ impl AppServer {
             clients: Arc::new(Mutex::new(HashMap::new())),
             events: Arc::new(Mutex::new(Vec::new())),
             whitelist: Arc::new(Mutex::new(Vec::new())),
+            motd: Arc::new(Mutex::new(String::new())),
         }
     }
 
     pub async fn run(&mut self) -> Result<(), anyhow::Error> {
+        self.init_motd();
+        self.init_whitelist();
+
         let clients = self.clients.clone();
         let events = self.events.clone();
+        let motd = self.motd.clone();
 
         tokio::spawn(async move {
             loop {
-                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
 
                 let events_iter = events.lock().await;
+                let motd_content = motd.lock().await;
+
                 for (_, (terminal, app)) in clients.lock().await.iter_mut() {
-                    terminal
-                        .draw(|f| {
-                            let size = f.size();
-                            f.render_widget(Clear, size);
+                    queue!(
+                        terminal,
+                        cursor::SavePosition,
+                        cursor::Hide,
+                        Clear(ClearType::FromCursorDown)
+                    )
+                    .unwrap();
 
-                            let chunks = Layout::default()
-                                .direction(Direction::Vertical)
-                                .constraints(
-                                    [
-                                        Constraint::Percentage(20),
-                                        Constraint::Fill(1),
-                                    ]
-                                    .as_ref(),
-                                )
-                                .split(size);
+                    queue!(
+                        terminal,
+                        Print("\n\r"),
+                        Print(format!("{}\n\r", &motd_content)),
+                        Print("\n\r")
+                    )
+                    .unwrap();
 
-                            let motd_buff = std::fs::read(Path::new(MOTD_FILEPATH))
-                                .expect("Should have been able to read the file");
-                            let motd_out = motd_buff.into_text()
-                                .expect("Should have been able to convert text with ANSI color codes to colored text");
-                            f.render_widget(motd_out, chunks[0]);
-
-                            let mut lines = vec![];
-                            for event in events_iter.iter() {
-                                lines.push(event.format_line(&app.user.username));
+                    for event in events_iter.iter() {
+                        let text = event.format(&app.user.username);
+                        for part in text.parts.iter() {
+                            match part {
+                                TextPart::Info(text) => {
+                                    queue!(terminal, Print(text)).unwrap();
+                                }
+                                TextPart::InfoDimmed(text) => {
+                                    queue!(
+                                        terminal,
+                                        SetForegroundColor(Color::DarkGrey),
+                                        Print(text),
+                                        ResetColor
+                                    )
+                                    .unwrap();
+                                }
+                                TextPart::Message(text) => {
+                                    queue!(terminal, Print(text),).unwrap();
+                                }
+                                TextPart::MessageHighlighted(text) => {
+                                    queue!(
+                                        terminal,
+                                        SetBackgroundColor(Color::DarkYellow),
+                                        Print(text),
+                                        ResetColor
+                                    )
+                                    .unwrap();
+                                }
+                                TextPart::Username(text) => {
+                                    let (r, g, b) = utils::rgb::gen_rgb(&app.user.username);
+                                    queue!(
+                                        terminal,
+                                        SetForegroundColor(Color::Rgb { r, g, b }),
+                                        Print(text),
+                                        ResetColor
+                                    )
+                                    .unwrap();
+                                }
                             }
+                        }
+                        queue!(terminal, Print("\n\r"),).unwrap();
+                    }
 
-                            let user_input = match std::str::from_utf8(app.input.bytes.as_slice()) {
-                                Ok(v) => v,
-                                Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-                            };
-                            let (r, g, b) = utils::rgb::gen_rgb(&app.user.username);
-                            let username_span = Span::styled(format!("[{}]: ", app.user.username),Style::default().fg(Color::Rgb(r, g, b)));
-                            let user_input_span = Span::styled(user_input, Style::default());
-                            let line = Line::from(vec![username_span, user_input_span]);
-                            lines.push(line);
+                    let (r, g, b) = utils::rgb::gen_rgb(&app.user.username);
+                    queue!(
+                        terminal,
+                        SetForegroundColor(Color::Rgb { r, g, b }),
+                        Print(format!("[{}]: ", app.user.username)),
+                        ResetColor,
+                        Print(app.input.to_str())
+                    )
+                    .unwrap();
 
-                            let text = Text::from(lines);
-                            let p = Paragraph::new(text).wrap(Wrap { trim: true });
-                            f.render_widget(p, chunks[1]);
-                        })
-                        .unwrap();
+                    queue!(terminal, cursor::RestorePosition).unwrap();
+
+                    terminal.flush().unwrap();
                 }
             }
         });
@@ -119,15 +152,26 @@ impl AppServer {
             ..Default::default()
         };
 
-        self.init_whitelist();
         self.run_on_address(Arc::new(config), ("0.0.0.0", 2222))
             .await?;
         Ok(())
     }
 
+    fn init_motd(&mut self) {
+        let motd_bytes = std::fs::read(Path::new(MOTD_FILEPATH))
+            .expect("Should have been able to read the motd file");
+
+        // hack to normalize line endings into \r\n
+        let motd_content = String::from_utf8_lossy(&motd_bytes)
+            .replace("\r\n", "\n")
+            .replace("\n", "\n\r");
+
+        self.motd = Arc::new(Mutex::new(motd_content));
+    }
+
     fn init_whitelist(&mut self) {
         let raw_whitelist = utils::fs::read_lines(WHITELIST_FILEPATH)
-            .expect("Should have been able to read the file");
+            .expect("Should have been able to read the whitelist file");
 
         let whitelist = raw_whitelist
             .iter()
@@ -177,13 +221,8 @@ impl Handler for AppServer {
             // Create an individual app state for a new client.
             let app = ChatApp::new(username.clone());
 
-            // Create an individual terminal for a new client.
-            let backend = CrosstermBackend::new(terminal_handle.clone());
-            let mut terminal = Terminal::new(backend)?;
-            terminal.clear().unwrap();
-
             let mut clients = self.clients.lock().await;
-            clients.insert(client_id, (terminal, app));
+            clients.insert(client_id, (terminal_handle, app));
 
             let mut events = self.events.lock().await;
             events.push(ClientEvent::Connected(ConnectedEvent {
@@ -220,31 +259,6 @@ impl Handler for AppServer {
             .handle_data(channel, session, data) // TODO: channel and session must be processed by server, not data handler
             .await
             .unwrap();
-
-        Ok(())
-    }
-
-    /// The client's window size has changed.
-    async fn window_change_request(
-        &mut self,
-        _: ChannelId,
-        col_width: u32,
-        row_height: u32,
-        _: u32,
-        _: u32,
-        _: &mut Session,
-    ) -> Result<(), Self::Error> {
-        {
-            let mut clients = self.clients.lock().await;
-            let (terminal, _) = clients.get_mut(&self.connection.id).unwrap();
-            let rect = Rect {
-                x: 0,
-                y: 0,
-                width: col_width as u16,
-                height: row_height as u16,
-            };
-            terminal.resize(rect)?;
-        }
 
         Ok(())
     }
