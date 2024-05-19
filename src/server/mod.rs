@@ -14,21 +14,20 @@ use ratatui::Terminal;
 use russh::{server::*, MethodSet};
 use russh::{Channel, ChannelId};
 use russh_keys::key::PublicKey;
-use terminal_keycode::{Decoder, KeyCode};
 use tokio::sync::Mutex;
 
 use crate::chat::app::ChatApp;
-use crate::chat::user::UserStatus;
 use crate::utils;
 
-use self::command::Command;
 use self::connection::ServerConnection;
 use self::event::*;
+use self::input_handler::InputHandler;
 use self::terminal::TerminalHandle;
 
 mod command;
 mod connection;
 mod event;
+mod input_handler;
 mod terminal;
 
 type SshTerminal = Terminal<CrosstermBackend<TerminalHandle>>;
@@ -108,8 +107,6 @@ impl AppServer {
                             f.render_widget(p, chunks[1]);
                         })
                         .unwrap();
-
-                    terminal.show_cursor().unwrap();
                 }
             }
         });
@@ -184,7 +181,6 @@ impl Handler for AppServer {
             let backend = CrosstermBackend::new(terminal_handle.clone());
             let mut terminal = Terminal::new(backend)?;
             terminal.clear().unwrap();
-            terminal.show_cursor().unwrap();
 
             let mut clients = self.clients.lock().await;
             clients.insert(client_id, (terminal, app));
@@ -218,84 +214,12 @@ impl Handler for AppServer {
         data: &[u8],
         session: &mut Session,
     ) -> Result<(), Self::Error> {
-        let client_id = &self.connection.id;
-        let username = &self.connection.username;
+        let input_handler = InputHandler::new(&self.connection.id, &self.clients, &self.events);
 
-        let mut decoder = Decoder::new();
-        for keycode in decoder.write(data[0]) {
-            print![
-                "code={:?} bytes={:?} printable={:?}\r\n",
-                keycode,
-                keycode.bytes(),
-                keycode.printable()
-            ];
-            match keycode {
-                KeyCode::Enter => {
-                    let mut clients = self.clients.lock().await;
-                    let mut events = self.events.lock().await;
-                    let (_, app) = clients.get_mut(client_id).unwrap();
-
-                    let (cmd, args) = split_at_first_space(&app.input.bytes);
-
-                    if !Command::is_command(cmd) {
-                        events.push(ClientEvent::SendMessage(SendMessageEvent {
-                            username: username.clone(),
-                            message: app.input.to_str(),
-                        }));
-
-                        app.input.clear();
-                        return Ok(());
-                    }
-
-                    if let Ok(cmd) = Command::parse(&cmd) {
-                        match cmd {
-                            Command::Exit => {
-                                events.push(ClientEvent::Left(LeftEvent {
-                                    username: username.clone(),
-                                    session_duration: app.session.secs_since_start(),
-                                }));
-                                clients.remove(client_id);
-                                session.close(channel);
-                                return Ok(());
-                            }
-                            Command::Away => {
-                                let reason = match std::str::from_utf8(args) {
-                                    Ok(v) => String::from(v),
-                                    Err(_) => String::new(),
-                                };
-                                app.user.go_away(reason.clone());
-                                events.push(ClientEvent::GoAway(GoAwayEvent {
-                                    username: username.clone(),
-                                    reason,
-                                }));
-                            }
-                            Command::Back => match &app.user.status {
-                                UserStatus::Active => {}
-                                UserStatus::Away { reason: _ } => {
-                                    app.user.return_active();
-                                    events.push(ClientEvent::ReturnBack(ReturnBackEvent {
-                                        username: username.clone(),
-                                    }));
-                                }
-                            },
-                        }
-                    }
-
-                    app.input.clear();
-                }
-                KeyCode::Backspace => {
-                    let mut clients = self.clients.lock().await;
-                    let (_, app) = clients.get_mut(client_id).unwrap();
-                    app.input.pop();
-                }
-                KeyCode::Char(_) | KeyCode::Tab | KeyCode::Space => {
-                    let mut clients = self.clients.lock().await;
-                    let (_, app) = clients.get_mut(client_id).unwrap();
-                    app.input.extend(data);
-                }
-                _ => {}
-            }
-        }
+        input_handler
+            .handle_data(channel, session, data) // TODO: channel and session must be processed by server, not data handler
+            .await
+            .unwrap();
 
         Ok(())
     }
@@ -323,18 +247,5 @@ impl Handler for AppServer {
         }
 
         Ok(())
-    }
-}
-
-fn split_at_first_space(bytes: &[u8]) -> (&[u8], &[u8]) {
-    // Find the position of the first space
-    if let Some(pos) = bytes.iter().position(|&b| b == b' ') {
-        // Split the slice at the position of the first space
-        let (first, rest) = bytes.split_at(pos);
-        // Skip the space in the rest slice
-        (first, &rest[1..])
-    } else {
-        // If there's no space, return the original slice
-        (bytes, &[])
     }
 }
