@@ -1,5 +1,7 @@
 mod chat;
+mod models;
 mod server;
+mod tui;
 mod utils;
 
 #[tokio::main]

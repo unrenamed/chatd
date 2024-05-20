@@ -1,31 +1,24 @@
 use std::collections::HashMap;
-use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use crossterm::cursor::{self};
-use crossterm::queue;
-use crossterm::style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor};
-use crossterm::terminal::{Clear, ClearType};
 use russh::{server::*, MethodSet};
 use russh::{Channel, ChannelId};
 use russh_keys::key::PublicKey;
 use tokio::sync::Mutex;
 
 use crate::chat::app::ChatApp;
-use crate::utils;
+use crate::models::event::{ClientEvent, ConnectedEvent};
+use crate::models::terminal::TerminalHandle;
+use crate::{tui, utils};
 
 use self::connection::ServerConnection;
-use self::event::*;
 use self::input_handler::InputHandler;
-use self::terminal::TerminalHandle;
 
 mod command;
 mod connection;
-mod event;
 mod input_handler;
-mod terminal;
 
 static MOTD_FILEPATH: &'static str = "./motd.ans";
 static WHITELIST_FILEPATH: &'static str = "./whitelist";
@@ -62,84 +55,13 @@ impl AppServer {
 
         tokio::spawn(async move {
             loop {
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
-                let events_iter = events.lock().await;
+                let events_iter: tokio::sync::MutexGuard<Vec<ClientEvent>> = events.lock().await;
                 let motd_content = motd.lock().await;
 
                 for (_, (terminal, app)) in clients.lock().await.iter_mut() {
-                    queue!(
-                        terminal,
-                        cursor::SavePosition,
-                        cursor::Hide,
-                        Clear(ClearType::FromCursorDown)
-                    )
-                    .unwrap();
-
-                    queue!(
-                        terminal,
-                        Print("\n\r"),
-                        Print(format!("{}\n\r", &motd_content)),
-                        Print("\n\r")
-                    )
-                    .unwrap();
-
-                    for event in events_iter.iter() {
-                        let text = event.format(&app.user.username);
-                        for part in text.parts.iter() {
-                            match part {
-                                TextPart::Info(text) => {
-                                    queue!(terminal, Print(text)).unwrap();
-                                }
-                                TextPart::InfoDimmed(text) => {
-                                    queue!(
-                                        terminal,
-                                        SetForegroundColor(Color::DarkGrey),
-                                        Print(text),
-                                        ResetColor
-                                    )
-                                    .unwrap();
-                                }
-                                TextPart::Message(text) => {
-                                    queue!(terminal, Print(text),).unwrap();
-                                }
-                                TextPart::MessageHighlighted(text) => {
-                                    queue!(
-                                        terminal,
-                                        SetBackgroundColor(Color::DarkYellow),
-                                        Print(text),
-                                        ResetColor
-                                    )
-                                    .unwrap();
-                                }
-                                TextPart::Username(text) => {
-                                    let (r, g, b) = utils::rgb::gen_rgb(&app.user.username);
-                                    queue!(
-                                        terminal,
-                                        SetForegroundColor(Color::Rgb { r, g, b }),
-                                        Print(text),
-                                        ResetColor
-                                    )
-                                    .unwrap();
-                                }
-                            }
-                        }
-                        queue!(terminal, Print("\n\r"),).unwrap();
-                    }
-
-                    let (r, g, b) = utils::rgb::gen_rgb(&app.user.username);
-                    queue!(
-                        terminal,
-                        SetForegroundColor(Color::Rgb { r, g, b }),
-                        Print(format!("[{}]: ", app.user.username)),
-                        ResetColor,
-                        Print(app.input.to_str())
-                    )
-                    .unwrap();
-
-                    queue!(terminal, cursor::RestorePosition).unwrap();
-
-                    terminal.flush().unwrap();
+                    tui::render(terminal, app, &events_iter, &motd_content);
                 }
             }
         });

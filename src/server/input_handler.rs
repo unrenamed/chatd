@@ -6,10 +6,10 @@ use tokio::sync::Mutex;
 
 use crate::{
     chat::{app::ChatApp, user::UserStatus},
-    server::{GoAwayEvent, LeftEvent, ReturnBackEvent, SendMessageEvent},
+    models::{event::*, terminal::TerminalHandle},
 };
 
-use super::{command::Command, terminal::TerminalHandle, ClientEvent};
+use super::{command::Command, ClientEvent};
 
 pub struct InputHandler<'a> {
     client_id: &'a usize,
