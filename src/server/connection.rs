@@ -11,11 +11,11 @@ impl ServerConnection {
     pub fn new() -> Self {
         Self {
             id: 0,
-            username: ServerConnection::generate_random_name(),
+            username: String::new(),
         }
     }
 
-    fn generate_random_name() -> String {
+    pub fn gen_rand_name(&mut self) -> String {
         let adjectives = [
             "Cool", "Mighty", "Brave", "Clever", "Happy", "Calm", "Eager", "Gentle", "Kind",
             "Jolly", "Swift", "Bold", "Fierce", "Wise", "Valiant", "Bright", "Noble", "Zany",

@@ -31,4 +31,8 @@ impl User {
     pub fn return_active(&mut self) {
         self.status = UserStatus::Active;
     }
+
+    pub fn set_new_name(&mut self, username: String) {
+        self.username = username;
+    }
 }

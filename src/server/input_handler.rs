@@ -95,7 +95,7 @@ impl<'a> InputHandler<'a> {
                                     Ok(v) => String::from(v),
                                     Err(_) => String::new(),
                                 };
-                                app.user.username = new_username.clone();
+                                app.user.set_new_name(new_username.clone());
                                 events.push(ClientEvent::ChangedName(ChangedNameEvent {
                                     old_username: username.clone(),
                                     new_username,

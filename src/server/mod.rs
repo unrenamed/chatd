@@ -29,6 +29,7 @@ pub struct AppServer {
     connection: ServerConnection,
     // shared server state (these aren't copied, only the pointers are)
     clients: Arc<Mutex<HashMap<usize, (TerminalHandle, ChatApp)>>>,
+    usernames: Arc<Mutex<Vec<String>>>,
     events: Arc<Mutex<Vec<ClientEvent>>>,
     whitelist: Arc<Mutex<Vec<PublicKey>>>,
     motd: Arc<Mutex<String>>,
@@ -39,6 +40,7 @@ impl AppServer {
         Self {
             connection: ServerConnection::new(),
             clients: Arc::new(Mutex::new(HashMap::new())),
+            usernames: Arc::new(Mutex::new(Vec::new())),
             events: Arc::new(Mutex::new(Vec::new())),
             whitelist: Arc::new(Mutex::new(Vec::new())),
             motd: Arc::new(Mutex::new(String::new())),
@@ -131,24 +133,33 @@ impl Handler for AppServer {
     ) -> Result<bool, Self::Error> {
         {
             let client_id = self.connection.id;
-            let username = &self.connection.username;
 
-            // Create a terminal handle for a new client.
+            let mut usernames = self.usernames.lock().await;
+            let user_exist = usernames
+                .iter()
+                .any(|name| name.eq(&self.connection.username));
+
+            let username;
+            match user_exist {
+                true => username = self.connection.gen_rand_name(),
+                false => username = self.connection.username.clone(),
+            }
+            usernames.push(String::from(&username));
+
             let terminal_handle = TerminalHandle {
                 handle: session.handle(),
                 sink: Vec::new(),
                 channel_id: channel.id(),
             };
 
-            // Create an individual app state for a new client.
-            let app = ChatApp::new(username.clone());
+            let app = ChatApp::new(String::from(&username));
 
             let mut clients = self.clients.lock().await;
             clients.insert(client_id, (terminal_handle, app));
 
             let mut events = self.events.lock().await;
             events.push(ClientEvent::Connected(ConnectedEvent {
-                username: String::from(username.clone()),
+                username: String::from(&username),
                 total_connected: clients.len(),
             }));
         }
