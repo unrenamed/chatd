@@ -1,5 +1,5 @@
 mod input;
-mod session;
+mod theme;
 
 pub mod app;
 pub mod user;

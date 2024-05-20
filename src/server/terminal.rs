@@ -1,3 +1,4 @@
+use log::error;
 use russh::{server::Handle, ChannelId};
 
 #[derive(Clone)]
@@ -22,7 +23,7 @@ impl std::io::Write for TerminalHandle {
         futures::executor::block_on(async move {
             let result = handle.data(channel_id, data).await;
             if result.is_err() {
-                eprintln!("Failed to send data: {:?}", result);
+                error!("Failed to send data: {:?}", result);
             }
         });
 

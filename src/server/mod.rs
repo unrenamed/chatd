@@ -3,34 +3,40 @@ use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use log::{error, info};
 use russh::{server::*, MethodSet};
 use russh::{Channel, ChannelId};
 use russh_keys::key::PublicKey;
 use tokio::sync::Mutex;
 
 use crate::chat::app::ChatApp;
-use crate::models::event::{ClientEvent, ConnectedEvent};
-use crate::models::terminal::TerminalHandle;
-use crate::{tui, utils};
+use crate::chat::user::User;
+use crate::utils;
 
-use self::connection::ServerConnection;
-use self::input_handler::InputHandler;
+use self::client_info::ClientInfo;
+use self::input_handler::{InputCallbackAction, InputHandler};
+use self::message::Message;
+use self::terminal::TerminalHandle;
 
+mod client_info;
 mod command;
-mod connection;
 mod input_handler;
+mod message;
+mod terminal;
+mod tui;
 
+static HISTORY_MAX_LEN: usize = 20;
 static MOTD_FILEPATH: &'static str = "./motd.ans";
 static WHITELIST_FILEPATH: &'static str = "./whitelist";
 
 #[derive(Clone)]
 pub struct AppServer {
     // per-client connection data
-    connection: ServerConnection,
+    client_info: ClientInfo,
     // shared server state (these aren't copied, only the pointers are)
     clients: Arc<Mutex<HashMap<usize, (TerminalHandle, ChatApp)>>>,
-    usernames: Arc<Mutex<Vec<String>>>,
-    events: Arc<Mutex<Vec<ClientEvent>>>,
+    messages: Arc<Mutex<Vec<Message>>>,
+    chat_members: Arc<Mutex<Vec<User>>>,
     whitelist: Arc<Mutex<Vec<PublicKey>>>,
     motd: Arc<Mutex<String>>,
 }
@@ -38,10 +44,10 @@ pub struct AppServer {
 impl AppServer {
     pub fn new() -> Self {
         Self {
-            connection: ServerConnection::new(),
+            client_info: ClientInfo::new(),
             clients: Arc::new(Mutex::new(HashMap::new())),
-            usernames: Arc::new(Mutex::new(Vec::new())),
-            events: Arc::new(Mutex::new(Vec::new())),
+            messages: Arc::new(Mutex::new(Vec::new())),
+            chat_members: Arc::new(Mutex::new(Vec::new())),
             whitelist: Arc::new(Mutex::new(Vec::new())),
             motd: Arc::new(Mutex::new(String::new())),
         }
@@ -52,18 +58,19 @@ impl AppServer {
         self.init_whitelist();
 
         let clients = self.clients.clone();
-        let events = self.events.clone();
+        let messages = self.messages.clone();
         let motd = self.motd.clone();
 
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
-                let events_iter: tokio::sync::MutexGuard<Vec<ClientEvent>> = events.lock().await;
+                let messages_iter: tokio::sync::MutexGuard<Vec<Message>> = messages.lock().await;
                 let motd_content = motd.lock().await;
 
                 for (_, (terminal, app)) in clients.lock().await.iter_mut() {
-                    tui::render(terminal, app, &events_iter, &motd_content);
+                    tui::render(terminal, app, &messages_iter, &motd_content)
+                        .unwrap_or_else(|error| error!("{}", error));
                 }
             }
         });
@@ -112,12 +119,12 @@ impl Server for AppServer {
     type Handler = Self;
     fn new_client(&mut self, _: Option<std::net::SocketAddr>) -> Self::Handler {
         let s = self.clone();
-        self.connection.id += 1;
+        self.client_info.id += 1;
         s
     }
 
     fn handle_session_error(&mut self, _error: <Self::Handler as Handler>::Error) {
-        eprintln!("{:?}", _error);
+        error!("{:?}", _error);
     }
 }
 
@@ -132,19 +139,20 @@ impl Handler for AppServer {
         session: &mut Session,
     ) -> Result<bool, Self::Error> {
         {
-            let client_id = self.connection.id;
+            let client_id = self.client_info.id;
+            let mut clients = self.clients.lock().await;
+            let mut chat_members = self.chat_members.lock().await;
+            let mut messages = self.messages.lock().await;
 
-            let mut usernames = self.usernames.lock().await;
-            let user_exist = usernames
+            let is_member = chat_members
                 .iter()
-                .any(|name| name.eq(&self.connection.username));
+                .any(|m| m.username.eq(&self.client_info.username));
 
             let username;
-            match user_exist {
-                true => username = self.connection.gen_rand_name(),
-                false => username = self.connection.username.clone(),
+            match is_member {
+                true => username = self.client_info.gen_rand_name(),
+                false => username = self.client_info.username.clone(),
             }
-            usernames.push(String::from(&username));
 
             let terminal_handle = TerminalHandle {
                 handle: session.handle(),
@@ -152,31 +160,75 @@ impl Handler for AppServer {
                 channel_id: channel.id(),
             };
 
-            let app = ChatApp::new(String::from(&username));
+            let mut app = ChatApp::new(
+                client_id,
+                username,
+                String::from_utf8_lossy(session.remote_sshid()).to_string(),
+                self.client_info.fingerprint.clone(),
+            );
 
-            let mut clients = self.clients.lock().await;
+            app.history_start_idx = messages.len().saturating_sub(HISTORY_MAX_LEN);
+
+            let user = app.user.clone();
+            chat_members.push(user.clone());
             clients.insert(client_id, (terminal_handle, app));
 
-            let mut events = self.events.lock().await;
-            events.push(ClientEvent::Connected(ConnectedEvent {
-                username: String::from(&username),
-                total_connected: clients.len(),
+            messages.push(Message::Announce(message::AnnounceMessage {
+                from: user,
+                body: format!("joined. (Connected: {})", clients.len()),
             }));
         }
 
         Ok(true)
     }
 
-    async fn auth_publickey(&mut self, user: &str, pk: &PublicKey) -> Result<Auth, Self::Error> {
-        self.connection.username = String::from(user);
-
+    #[allow(unused_variables)]
+    async fn auth_publickey_offered(
+        &mut self,
+        user: &str,
+        pk: &PublicKey,
+    ) -> Result<Auth, Self::Error> {
+        info!("auth_publickey_offered: user: {}", user);
         let whitelist = self.whitelist.lock().await;
         if whitelist.iter().any(|key| key.eq(pk)) {
             return Ok(Auth::Accept);
         }
-
         Ok(Auth::Reject {
-            proceed_with_methods: Some(MethodSet::NONE),
+            proceed_with_methods: Some(MethodSet::PUBLICKEY | MethodSet::NONE),
+        })
+    }
+
+    async fn auth_publickey(&mut self, user: &str, pk: &PublicKey) -> Result<Auth, Self::Error> {
+        info!("auth_publickey: user: {}", user);
+        self.client_info.username = String::from(user);
+        self.client_info.fingerprint = format!("SHA256:{}", pk.fingerprint());
+        Ok(Auth::Accept)
+    }
+
+    async fn auth_none(&mut self, user: &str) -> Result<Auth, Self::Error> {
+        info!("auth_none: user: {user}");
+        self.client_info.username = String::from(user);
+        self.client_info.fingerprint = format!("(no public key)");
+        Ok(Auth::Accept)
+    }
+
+    async fn auth_password(&mut self, user: &str, password: &str) -> Result<Auth, Self::Error> {
+        info!("auth_password: credentials: {}, {}", user, password);
+        Ok(Auth::Reject {
+            proceed_with_methods: Some(MethodSet::PUBLICKEY | MethodSet::NONE),
+        })
+    }
+
+    #[allow(unused_variables)]
+    async fn auth_keyboard_interactive(
+        &mut self,
+        user: &str,
+        submethods: &str,
+        response: Option<Response<'async_trait>>,
+    ) -> Result<Auth, Self::Error> {
+        info!("auth_keyboard_interactive: user: {user}");
+        Ok(Auth::Reject {
+            proceed_with_methods: Some(MethodSet::PUBLICKEY | MethodSet::NONE),
         })
     }
 
@@ -186,12 +238,23 @@ impl Handler for AppServer {
         data: &[u8],
         session: &mut Session,
     ) -> Result<(), Self::Error> {
-        let input_handler = InputHandler::new(&self.connection.id, &self.clients, &self.events);
+        let mut clients = self.clients.lock().await;
+        let mut chat_members = self.chat_members.lock().await;
 
-        input_handler
-            .handle_data(channel, session, data) // TODO: channel and session must be processed by server, not data handler
-            .await
-            .unwrap();
+        let (_, app) = clients
+            .get_mut(&self.client_info.id)
+            .expect("Connected client must be registered in the clients list");
+
+        let mut input_handler = InputHandler::new(app, &chat_members, &self.messages);
+
+        match input_handler.handle_data(data).await {
+            InputCallbackAction::CloseClientSession => {
+                chat_members.retain(|m| !m.id.eq(&self.client_info.id));
+                clients.remove(&self.client_info.id);
+                session.close(channel);
+            }
+            InputCallbackAction::NoAction => {}
+        }
 
         Ok(())
     }

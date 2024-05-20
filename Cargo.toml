@@ -6,8 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-rpassword = "7.3.1"
-ssh-key = { version = "0.6.3", features = ["std", "crypto", "encryption"] }
 futures = "0.3.30"
 russh = "0.43.0"
 russh-keys = "0.43.0"
@@ -17,12 +15,9 @@ async-trait = "0.1.77"
 env_logger = "0.11.1"
 log = "0.4.20"
 clap = { version = "3.2", features = ["derive"] }
-tokio-fd = "0.3"
-shell-escape = "0.1"
 crossterm = "0.27.0"
-tui-textarea = "0.4.0"
 terminal-keycode = "1.1.1"
-ansi-to-tui = "4.0.1"
 rand = "0.8.5"
 fnv = "1.0.7"
 chrono = "0.4.38"
+humantime = "2.1.0"

@@ -1,9 +1,14 @@
+use std::fmt::Display;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     Exit,
     Away,
     Back,
-    Nick,
+    ChangeName,
+    SendPrivateMessage,
+    GetAllUsers,
+    Whois,
 }
 
 impl Command {
@@ -16,9 +21,30 @@ impl Command {
             b"/exit" => Ok(Command::Exit),
             b"/away" => Ok(Command::Away),
             b"/back" => Ok(Command::Back),
-            b"/nick" => Ok(Command::Nick),
+            b"/name" => Ok(Command::ChangeName),
+            b"/msg" => Ok(Command::SendPrivateMessage),
+            b"/users" => Ok(Command::GetAllUsers),
+            b"/whois" => Ok(Command::Whois),
             // Add other byte slice matches here
             _ => Err("Unknown command".to_string()),
         }
+    }
+}
+
+impl Display for Command {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Command::Exit => "/exit",
+                Command::Away => "/away",
+                Command::Back => "/back",
+                Command::ChangeName => "/name",
+                Command::SendPrivateMessage => "/msg",
+                Command::GetAllUsers => "/users",
+                Command::Whois => "/whois",
+            }
+        )
     }
 }

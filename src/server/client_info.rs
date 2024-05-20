@@ -2,16 +2,18 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 
 #[derive(Debug, Clone)]
-pub struct ServerConnection {
+pub struct ClientInfo {
     pub id: usize,
     pub username: String,
+    pub fingerprint: String,
 }
 
-impl ServerConnection {
+impl ClientInfo {
     pub fn new() -> Self {
         Self {
             id: 0,
             username: String::new(),
+            fingerprint: String::new(),
         }
     }
 
