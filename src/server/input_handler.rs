@@ -90,6 +90,17 @@ impl<'a> InputHandler<'a> {
                                     }));
                                 }
                             },
+                            Command::Nick => {
+                                let new_username = match std::str::from_utf8(args) {
+                                    Ok(v) => String::from(v),
+                                    Err(_) => String::new(),
+                                };
+                                app.user.username = new_username.clone();
+                                events.push(ClientEvent::ChangedName(ChangedNameEvent {
+                                    old_username: username.clone(),
+                                    new_username,
+                                }));
+                            }
                         }
                     }
 

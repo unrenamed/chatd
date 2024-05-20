@@ -4,6 +4,7 @@ pub enum ClientEvent {
     GoAway(GoAwayEvent),
     ReturnBack(ReturnBackEvent),
     SendMessage(SendMessageEvent),
+    ChangedName(ChangedNameEvent),
 }
 
 pub struct ConnectedEvent {
@@ -28,4 +29,9 @@ pub struct GoAwayEvent {
 
 pub struct ReturnBackEvent {
     pub username: String,
+}
+
+pub struct ChangedNameEvent {
+    pub old_username: String,
+    pub new_username: String,
 }

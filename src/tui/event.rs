@@ -12,6 +12,7 @@ impl ClientEvent {
             ClientEvent::GoAway(event) => event.format(),
             ClientEvent::Connected(event) => event.format(),
             ClientEvent::ReturnBack(event) => event.format(),
+            ClientEvent::ChangedName(event) => event.format(),
         }
     }
 }
@@ -56,6 +57,16 @@ impl FormattableEvent for ReturnBackEvent {
     fn format(&self) -> StyledText {
         let text = format!("** {} is back.", self.username);
         StyledText::new(vec![TextPart::Info(text)])
+    }
+}
+
+impl FormattableEvent for ChangedNameEvent {
+    fn format(&self) -> StyledText {
+        let text = format!(
+            " * {} user is now known as {}.",
+            self.old_username, self.new_username
+        );
+        StyledText::new(vec![TextPart::InfoDimmed(text)])
     }
 }
 

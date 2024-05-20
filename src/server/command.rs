@@ -3,6 +3,7 @@ pub enum Command {
     Exit,
     Away,
     Back,
+    Nick,
 }
 
 impl Command {
@@ -15,6 +16,7 @@ impl Command {
             b"/exit" => Ok(Command::Exit),
             b"/away" => Ok(Command::Away),
             b"/back" => Ok(Command::Back),
+            b"/nick" => Ok(Command::Nick),
             // Add other byte slice matches here
             _ => Err("Unknown command".to_string()),
         }
