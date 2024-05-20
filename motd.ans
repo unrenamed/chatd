@@ -1,4 +1,5 @@
-[31;1m👋 Welcome to our SSH chat, enter [0m/help[31;1m for more.
-[32;1m🐛 Please enjoy our selection of bugs, but run your own server if you want to crash it:[0m https://google.com
-[33;1m🍮 Sponsors get an emoji prefix:[0m https://google.com
-[34;1m😌 Be nice and follow our Code of Conduct:[0m https://google.com
+[31;1m👋 Welcome to SSH Chat Hub! Your adventure starts here.[0m
+[32;1m🔧 Need help? Type [0m/help[32;1m for a list of commands.[0m
+[33;1m🐞 Spotted a bug? Let us know on GitHub:[0m https://github.com/unrenamed/ssh-chat/issues
+[34;1m💡 Tip: Keep your experiments safe by using a personal server.
+[36;1m✨ Enjoy your stay and happy chatting!
