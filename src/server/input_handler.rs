@@ -4,7 +4,9 @@ use tokio::sync::Mutex;
 
 use crate::chat::app::ChatApp;
 use crate::chat::user::{self, User};
+use crate::server::command::CommandParseError;
 use crate::server::message;
+use crate::utils;
 
 use super::{command::Command, message::Message};
 
@@ -46,30 +48,30 @@ impl<'a> InputHandler<'a> {
 
             match keycode {
                 KeyCode::Enter => {
-                    let (cmd, args) = split_at_first_space(&self.app.input.bytes);
-                    if !Command::is_command(cmd) {
-                        messages.push(Message::Public(message::PublicMessage {
-                            from: self.app.user.clone(),
-                            body: self.app.input.to_str(),
-                        }));
-                        self.app.input.clear();
-                        return InputCallbackAction::NoAction;
-                    }
+                    let mut input_iter = std::str::from_utf8(&self.app.input.bytes)
+                        .expect("Input must be a valid UTF-8 string")
+                        .split_whitespace()
+                        .into_iter();
 
-                    let args: &str = std::str::from_utf8(args)
-                        .expect("Command arguments to be a valid UTF-8 string");
-                    let command: &str =
-                        std::str::from_utf8(cmd).expect("Command to be a valid UTF-8 string");
-
-                    messages.push(Message::Command(message::CommandMessage {
+                    let command_msg = message::CommandMessage {
                         from: self.app.user.clone(),
-                        cmd: command.to_string(),
-                        args: args.to_string(),
-                    }));
+                        cmd: input_iter.nth(0).unwrap().to_string(),
+                        args: input_iter.collect::<Vec<_>>().join(" "),
+                    };
 
-                    let cmd = match Command::parse(cmd) {
-                        Ok(c) => c,
+                    let cmd = Command::parse(&self.app.input.bytes);
+
+                    match cmd {
+                        Err(err) if err == CommandParseError::NotRecognizedAsCommand => {
+                            messages.push(Message::Public(message::PublicMessage {
+                                from: self.app.user.clone(),
+                                body: self.app.input.to_str(),
+                            }));
+                            self.app.input.clear();
+                            return InputCallbackAction::NoAction;
+                        }
                         Err(err) => {
+                            messages.push(Message::Command(command_msg));
                             messages.push(Message::System(message::SystemMessage {
                                 from: self.app.user.clone(),
                                 body: format!("Error: {}", err),
@@ -77,9 +79,10 @@ impl<'a> InputHandler<'a> {
                             self.app.input.clear();
                             return InputCallbackAction::NoAction;
                         }
-                    };
+                        Ok(_) => messages.push(Message::Command(command_msg)),
+                    }
 
-                    match cmd {
+                    match cmd.unwrap() {
                         Command::Exit => {
                             messages.push(Message::Announce(message::AnnounceMessage {
                                 from: self.app.user.clone(),
@@ -90,11 +93,11 @@ impl<'a> InputHandler<'a> {
                             }));
                             return InputCallbackAction::CloseClientSession;
                         }
-                        Command::Away => {
-                            self.app.user.go_away(args.to_string());
+                        Command::Away(reason) => {
+                            self.app.user.go_away(reason.clone());
                             messages.push(Message::Emote(message::EmoteMessage {
                                 from: self.app.user.clone(),
-                                body: format!("has gone away: \"{}\"", args),
+                                body: format!("has gone away: \"{}\"", reason),
                             }));
                         }
                         Command::Back => match &self.app.user.status {
@@ -110,22 +113,15 @@ impl<'a> InputHandler<'a> {
                                 }));
                             }
                         },
-                        Command::ChangeName => {
-                            let parts: Vec<&str> = args.split_whitespace().collect();
-                            let new_username = parts[0].to_string();
-
+                        Command::Name(new_name) => {
                             messages.push(Message::Announce(message::AnnounceMessage {
                                 from: self.app.user.clone(),
-                                body: format!("user is now known as {}.", new_username),
+                                body: format!("user is now known as {}.", new_name),
                             }));
 
-                            self.app.user.set_new_name(new_username);
+                            self.app.user.set_new_name(new_name.to_string());
                         }
-                        Command::SendPrivateMessage => {
-                            let parts: Vec<&str> = args.split_whitespace().collect();
-                            let user = parts[0].to_string();
-                            let body = parts[1..].join(" ");
-
+                        Command::Msg(user, body) => {
                             let sender = self.app.user.clone();
                             let target = self.users.iter().find(|u| u.username.eq(&user));
 
@@ -149,7 +145,7 @@ impl<'a> InputHandler<'a> {
                                 })),
                             }
                         }
-                        Command::GetAllUsers => {
+                        Command::Users => {
                             let from = self.app.user.clone();
 
                             let mut usernames: Vec<String> =
@@ -169,17 +165,64 @@ impl<'a> InputHandler<'a> {
 
                             messages.push(Message::System(message::SystemMessage { from, body }));
                         }
-                        Command::Whois => {
-                            let parts: Vec<&str> = args.split_whitespace().collect();
-                            let target = parts[0].to_string();
+                        Command::Whois(target) => {
                             let user = self.users.iter().find(|u| u.username.eq(&target));
+                            let body = match user {
+                                Some(u) => u.to_string(),
+                                None => format!("Error: User is not found"),
+                            };
+                            messages.push(Message::System(message::SystemMessage {
+                                from: self.app.user.clone(),
+                                body,
+                            }));
+                        }
+                        Command::Slap(target) => {
+                            if target.is_none() {
+                                messages.push(Message::Emote(message::EmoteMessage {
+                                    from: self.app.user.clone(),
+                                    body: format!("hits himself with a squishy banana."),
+                                }));
+                                return InputCallbackAction::NoAction;
+                            }
+
+                            let target = target.unwrap();
+                            let user = self.users.iter().find(|u| u.username.eq(&target));
+
                             if let Some(u) = user {
+                                messages.push(Message::Emote(message::EmoteMessage {
+                                    from: self.app.user.clone(),
+                                    body: format!("hits {} with a squishy banana.", u.username),
+                                }));
+                            } else {
                                 messages.push(Message::System(message::SystemMessage {
                                     from: self.app.user.clone(),
-                                    body: u.to_string(),
-                                }));
+                                    body: format!("Error: That slippin' monkey is not in the room"),
+                                }))
                             }
                         }
+                        Command::Shrug => {
+                            messages.push(Message::Emote(message::EmoteMessage {
+                                from: self.app.user.clone(),
+                                body: "¯\\_(ツ)_/¯".to_string(),
+                            }));
+                        }
+                        Command::Me(action) => {
+                            messages.push(Message::Emote(message::EmoteMessage {
+                                from: self.app.user.clone(),
+                                body: match action {
+                                    Some(s) => format!("{}", s),
+                                    None => format!("is at a loss for words."),
+                                },
+                            }));
+                        }
+                        Command::Help => messages.push(Message::System(message::SystemMessage {
+                            from: self.app.user.clone(),
+                            body: format!(
+                                "Available commands: {}{}",
+                                utils::NEWLINE,
+                                Command::to_string()
+                            ),
+                        })),
                     }
 
                     self.app.input.clear();
@@ -195,18 +238,5 @@ impl<'a> InputHandler<'a> {
         }
 
         InputCallbackAction::NoAction
-    }
-}
-
-fn split_at_first_space(bytes: &[u8]) -> (&[u8], &[u8]) {
-    // Find the position of the first space
-    if let Some(pos) = bytes.iter().position(|&b| b == b' ') {
-        // Split the slice at the position of the first space
-        let (first, rest) = bytes.split_at(pos);
-        // Skip the space in the rest slice
-        (first, &rest[1..])
-    } else {
-        // If there's no space, return the original slice
-        (bytes, &[])
     }
 }
