@@ -1,75 +1,66 @@
-use std::collections::HashMap;
-use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use log::{error, info};
+use room::ServerRoom;
 use russh::{server::*, MethodSet};
 use russh::{Channel, ChannelId};
 use russh_keys::key::PublicKey;
 use tokio::sync::Mutex;
 
-use crate::chat::app::ChatApp;
-use crate::chat::user::User;
 use crate::utils;
 
 use self::client_info::ClientInfo;
-use self::input_handler::{InputCallbackAction, InputHandler};
-use self::message::Message;
 use self::terminal::TerminalHandle;
 
+mod app;
 mod client_info;
 mod command;
-mod input_handler;
+mod input;
 mod message;
+mod motd;
+mod room;
+mod state;
 mod terminal;
-mod tui;
+mod theme;
+mod user;
 
-static HISTORY_MAX_LEN: usize = 20;
-static MOTD_FILEPATH: &'static str = "./motd.ans";
 static WHITELIST_FILEPATH: &'static str = "./whitelist";
 
 #[derive(Clone)]
 pub struct AppServer {
-    // per-client connection data
     client_info: ClientInfo,
-    // shared server state (these aren't copied, only the pointers are)
-    clients: Arc<Mutex<HashMap<usize, (TerminalHandle, ChatApp)>>>,
-    messages: Arc<Mutex<Vec<Message>>>,
-    chat_members: Arc<Mutex<Vec<User>>>,
+    room: Arc<Mutex<ServerRoom>>,
     whitelist: Arc<Mutex<Vec<PublicKey>>>,
-    motd: Arc<Mutex<String>>,
 }
 
 impl AppServer {
     pub fn new() -> Self {
         Self {
             client_info: ClientInfo::new(),
-            clients: Arc::new(Mutex::new(HashMap::new())),
-            messages: Arc::new(Mutex::new(Vec::new())),
-            chat_members: Arc::new(Mutex::new(Vec::new())),
+            room: Arc::new(Mutex::new(ServerRoom::new())),
             whitelist: Arc::new(Mutex::new(Vec::new())),
-            motd: Arc::new(Mutex::new(String::new())),
         }
     }
 
     pub async fn run(&mut self) -> Result<(), anyhow::Error> {
-        self.init_motd();
         self.init_whitelist();
 
-        let clients = self.clients.clone();
-        let messages = self.messages.clone();
-        let motd = self.motd.clone();
+        let room = self.room.clone();
 
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
-                let messages_iter: tokio::sync::MutexGuard<Vec<Message>> = messages.lock().await;
-                let motd_content = motd.lock().await;
-
-                for (_, (terminal, app)) in clients.lock().await.iter_mut() {
-                    tui::render(terminal, app, &messages_iter, &motd_content)
+                let motd = room.lock().await.motd().clone();
+                for (_, member) in room.lock().await.members_mut().iter_mut() {
+                    member
+                        .render_motd(&motd)
+                        .await
+                        .unwrap_or_else(|error| error!("{}", error));
+                    member
+                        .render()
+                        .await
                         .unwrap_or_else(|error| error!("{}", error));
                 }
             }
@@ -86,18 +77,6 @@ impl AppServer {
         self.run_on_address(Arc::new(config), ("0.0.0.0", 2222))
             .await?;
         Ok(())
-    }
-
-    fn init_motd(&mut self) {
-        let motd_bytes = std::fs::read(Path::new(MOTD_FILEPATH))
-            .expect("Should have been able to read the motd file");
-
-        // hack to normalize line endings into \r\n
-        let motd_content = String::from_utf8_lossy(&motd_bytes)
-            .replace("\r\n", "\n")
-            .replace("\n", "\n\r");
-
-        self.motd = Arc::new(Mutex::new(motd_content));
     }
 
     fn init_whitelist(&mut self) {
@@ -138,46 +117,23 @@ impl Handler for AppServer {
         channel: Channel<Msg>,
         session: &mut Session,
     ) -> Result<bool, Self::Error> {
-        {
-            let client_id = self.client_info.id;
-            let mut clients = self.clients.lock().await;
-            let mut chat_members = self.chat_members.lock().await;
-            let mut messages = self.messages.lock().await;
+        let terminal_handle = TerminalHandle {
+            handle: session.handle(),
+            sink: Vec::new(),
+            channel_id: channel.id(),
+        };
 
-            let is_member = chat_members
-                .iter()
-                .any(|m| m.username.eq(&self.client_info.username));
-
-            let username;
-            match is_member {
-                true => username = self.client_info.gen_rand_name(),
-                false => username = self.client_info.username.clone(),
-            }
-
-            let terminal_handle = TerminalHandle {
-                handle: session.handle(),
-                sink: Vec::new(),
-                channel_id: channel.id(),
-            };
-
-            let mut app = ChatApp::new(
-                client_id,
-                username,
-                String::from_utf8_lossy(session.remote_sshid()).to_string(),
+        self.room
+            .lock()
+            .await
+            .join(
+                self.client_info.id,
+                self.client_info.connect_username.clone(),
                 self.client_info.fingerprint.clone(),
-            );
-
-            app.history_start_idx = messages.len().saturating_sub(HISTORY_MAX_LEN);
-
-            let user = app.user.clone();
-            chat_members.push(user.clone());
-            clients.insert(client_id, (terminal_handle, app));
-
-            messages.push(Message::Announce(message::AnnounceMessage {
-                from: user,
-                body: format!("joined. (Connected: {})", clients.len()),
-            }));
-        }
+                terminal_handle,
+                session.remote_sshid(),
+            )
+            .await;
 
         Ok(true)
     }
@@ -200,14 +156,14 @@ impl Handler for AppServer {
 
     async fn auth_publickey(&mut self, user: &str, pk: &PublicKey) -> Result<Auth, Self::Error> {
         info!("auth_publickey: user: {}", user);
-        self.client_info.username = String::from(user);
+        self.client_info.connect_username = String::from(user);
         self.client_info.fingerprint = format!("SHA256:{}", pk.fingerprint());
         Ok(Auth::Accept)
     }
 
     async fn auth_none(&mut self, user: &str) -> Result<Auth, Self::Error> {
         info!("auth_none: user: {user}");
-        self.client_info.username = String::from(user);
+        self.client_info.connect_username = String::from(user);
         self.client_info.fingerprint = format!("(no public key)");
         Ok(Auth::Accept)
     }
@@ -234,27 +190,15 @@ impl Handler for AppServer {
 
     async fn data(
         &mut self,
-        channel: ChannelId,
+        _: ChannelId,
         data: &[u8],
-        session: &mut Session,
+        _: &mut Session,
     ) -> Result<(), Self::Error> {
-        let mut clients = self.clients.lock().await;
-        let mut chat_members = self.chat_members.lock().await;
-
-        let (_, app) = clients
-            .get_mut(&self.client_info.id)
-            .expect("Connected client must be registered in the clients list");
-
-        let mut input_handler = InputHandler::new(app, &chat_members, &self.messages);
-
-        match input_handler.handle_data(data).await {
-            InputCallbackAction::CloseClientSession => {
-                chat_members.retain(|m| !m.id.eq(&self.client_info.id));
-                clients.remove(&self.client_info.id);
-                session.close(channel);
-            }
-            InputCallbackAction::NoAction => {}
-        }
+        self.room
+            .lock()
+            .await
+            .handle_input(&self.client_info.id, data)
+            .await;
 
         Ok(())
     }

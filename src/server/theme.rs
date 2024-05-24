@@ -3,9 +3,9 @@ use fnv::FnvHasher;
 use std::hash::{Hash, Hasher};
 
 #[derive(Clone, Debug, Default)]
-pub struct Theme {}
+pub struct UserTheme {}
 
-impl Theme {
+impl UserTheme {
     pub fn style_text<'a>(&self, s: &'a str) -> StyledContent<&'a str> {
         s.with(Color::White)
     }
@@ -15,7 +15,7 @@ impl Theme {
     }
 
     pub fn style_username<'a>(&self, s: &'a str) -> StyledContent<&'a str> {
-        let (r, g, b) = Theme::gen_rgb(&s);
+        let (r, g, b) = UserTheme::gen_rgb(&s);
         s.with(Color::Rgb { r, g, b })
     }
 

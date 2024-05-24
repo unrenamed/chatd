@@ -31,3 +31,14 @@ impl std::io::Write for TerminalHandle {
         Ok(())
     }
 }
+
+impl Drop for TerminalHandle {
+    fn drop(&mut self) {
+        futures::executor::block_on(async move {
+            let result = self.handle.close(self.channel_id).await;
+            if result.is_err() {
+                error!("Failed to close session: {:?}", result);
+            }
+        });
+    }
+}

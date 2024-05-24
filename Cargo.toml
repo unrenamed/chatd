@@ -22,3 +22,4 @@ fnv = "1.0.7"
 chrono = "0.4.38"
 humantime = "2.1.0"
 strum = { version = "0.26", features = ["derive"] }
+enum_dispatch = "0.3.13"
