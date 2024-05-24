@@ -27,6 +27,7 @@ pub struct User {
     pub joined_at: DateTime<Utc>,
     pub ssh_client: String,
     pub fingerprint: String,
+    pub reply_to: Option<usize>,
 }
 
 impl User {
@@ -38,6 +39,7 @@ impl User {
             fingerprint,
             status: UserStatus::Active,
             joined_at: Utc::now(),
+            reply_to: None,
         }
     }
 
@@ -60,6 +62,10 @@ impl User {
         let now = Utc::now();
         let secs = now.signed_duration_since(self.joined_at).num_seconds() as u64;
         Duration::from_secs(secs)
+    }
+
+    pub fn set_reply_to(&mut self, reply_to: usize) {
+        self.reply_to = Some(reply_to);
     }
 }
 

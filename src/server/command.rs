@@ -29,6 +29,13 @@ pub enum Command {
     ))]
     Msg(String, String),
 
+    #[strum(props(
+        Cmd = "/reply",
+        Args = "<message>",
+        Help = "Reply to the previous private message"
+    ))]
+    Reply(String),
+
     #[strum(props(Cmd = "/users", Help = "List users who are connected"))]
     Users,
 
@@ -103,6 +110,13 @@ impl Command {
                     return Err(CommandParseError::ArgumentExpected(format!("message body")));
                 };
                 Ok(Command::Msg(user.unwrap().to_string(), body))
+            }
+            b"/reply" => {
+                let body = args_iter.collect::<Vec<_>>().join(" ");
+                if body.is_empty() {
+                    return Err(CommandParseError::ArgumentExpected(format!("message body")));
+                };
+                Ok(Command::Reply(body))
             }
             b"/users" => Ok(Command::Users),
             b"/whois" => match args_iter.nth(0) {
