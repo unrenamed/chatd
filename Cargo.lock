@@ -320,6 +320,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "circular-buffer"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "da987586004ae7c43b7df5e3f7693775068522e1086f8d9b2d74c778a0f43313"
+
+[[package]]
 name = "clap"
 version = "3.2.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1636,6 +1642,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "circular-buffer",
  "clap",
  "crossterm",
  "enum_dispatch",
