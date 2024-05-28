@@ -27,7 +27,7 @@ type UserName = String;
 
 #[derive(Clone)]
 pub struct ServerRoom {
-    names: HashMap<UserId, UserName>,
+    pub names: HashMap<UserId, UserName>,
     members: HashMap<UserName, app::App>,
     motd: Motd,
 }
@@ -52,14 +52,15 @@ impl ServerRoom {
     pub async fn join(
         &mut self,
         user_id: UserId,
-        user_name: UserName,
+        username: UserName,
         fingerpint: String,
         terminal: TerminalHandle,
         ssh_id: &[u8],
     ) {
-        let name = match self.is_member(&user_name).await {
+        info!("join {}", user_id);
+        let name = match self.is_member(&username).await {
             true => User::gen_rand_name(),
-            false => user_name,
+            false => username,
         };
 
         let user = User::new(
@@ -114,6 +115,9 @@ impl ServerRoom {
             }
             Message::Announce(_) => {
                 for (_, member) in self.members.iter() {
+                    if member.user.quiet {
+                        continue;
+                    }
                     if let Err(_) = member.send_message(msg.clone()).await {
                         continue;
                     }
@@ -130,28 +134,21 @@ impl ServerRoom {
     }
 
     pub async fn handle_input(&mut self, user_id: &UserId, data: &[u8]) {
-        let mut user_name = self.names.get(user_id).unwrap().clone();
+        let mut username = self.names.get(user_id).unwrap().clone();
 
         let mut decoder = Decoder::new();
         for keycode in decoder.write(data[0]) {
-            info!(
-                "code={:?} bytes={:?} printable={:?}",
-                keycode,
-                keycode.bytes(),
-                keycode.printable()
-            );
-
             match keycode {
                 KeyCode::Enter => {
                     let cmd = {
-                        let member = self.members.get_mut(&user_name).unwrap();
+                        let member = self.members.get_mut(&username).unwrap();
                         Command::parse(&member.state.input.bytes())
                     };
 
                     match cmd {
                         Err(err) if err == CommandParseError::NotRecognizedAsCommand => {
                             let message = {
-                                let member = self.members.get_mut(&user_name).unwrap();
+                                let member = self.members.get_mut(&username).unwrap();
                                 message::Public::new(
                                     member.user.clone(),
                                     member.state.input.to_str(),
@@ -160,14 +157,14 @@ impl ServerRoom {
                             };
                             self.send_message(message).await;
 
-                            let member = self.members.get_mut(&user_name).unwrap();
+                            let member = self.members.get_mut(&username).unwrap();
                             member.state.input.clear();
 
                             return;
                         }
                         Err(err) => {
                             let message = {
-                                let member = self.members.get_mut(&user_name).unwrap();
+                                let member = self.members.get_mut(&username).unwrap();
                                 let mut input_iter =
                                     std::str::from_utf8(&member.state.input.bytes())
                                         .expect("Input must be a valid UTF-8 string")
@@ -183,19 +180,19 @@ impl ServerRoom {
                             self.send_message(message).await;
 
                             let message = {
-                                let member = self.members.get_mut(&user_name).unwrap();
+                                let member = self.members.get_mut(&username).unwrap();
                                 message::Error::new(member.user.clone(), format!("{}", err)).into()
                             };
                             self.send_message(message).await;
 
-                            let member = self.members.get_mut(&user_name).unwrap();
+                            let member = self.members.get_mut(&username).unwrap();
                             member.state.input.clear();
 
                             return;
                         }
                         Ok(_) => {
                             let message = {
-                                let member = self.members.get_mut(&user_name).unwrap();
+                                let member = self.members.get_mut(&username).unwrap();
                                 let mut input_iter =
                                     std::str::from_utf8(&member.state.input.bytes())
                                         .expect("Input must be a valid UTF-8 string")
@@ -214,21 +211,21 @@ impl ServerRoom {
 
                     match cmd.unwrap() {
                         Command::Exit => {
-                            let from = self.members.get_mut(&user_name).unwrap().clone();
-                            let user_id = from.user.id;
+                            let app = self.members.get_mut(&username).unwrap().clone();
 
-                            let duration = humantime::format_duration(from.user.joined_duration());
+                            let duration = humantime::format_duration(app.user.joined_duration());
                             let message = message::Announce::new(
-                                from.user.clone(),
+                                app.user.clone(),
                                 format!("left: (After {})", duration),
                             );
                             self.send_message(message.into()).await;
-                            self.members.remove(&user_name);
+
+                            self.members.remove(&username);
                             self.names.remove(&user_id);
                             return;
                         }
                         Command::Away(reason) => {
-                            let from = self.members.get_mut(&user_name).unwrap();
+                            let from = self.members.get_mut(&username).unwrap();
                             from.user.go_away(reason.to_string());
 
                             let message = message::Emote::new(
@@ -238,7 +235,7 @@ impl ServerRoom {
                             self.send_message(message.into()).await;
                         }
                         Command::Back => {
-                            let from = self.members.get_mut(&user_name).unwrap();
+                            let from = self.members.get_mut(&username).unwrap();
                             match &from.user.status {
                                 user::UserStatus::Active => {}
                                 user::UserStatus::Away {
@@ -255,13 +252,13 @@ impl ServerRoom {
                             }
                         }
                         Command::Name(new_name) => 'label: {
-                            let from = self.members.get_mut(&user_name).unwrap();
+                            let from = self.members.get_mut(&username).unwrap();
                             let user = from.user.clone();
 
                             if user.username == new_name {
                                 let message = message::Error::new(
                                     user.clone(),
-                                    "new name is the same as the original".to_string(),
+                                    "New name is the same as the original".to_string(),
                                 );
                                 self.send_message(message.into()).await;
                                 break 'label;
@@ -286,24 +283,24 @@ impl ServerRoom {
                             let old_name = user.username;
                             let user_id = user.id;
 
-                            let from = self.members.get_mut(&user_name).unwrap();
+                            let from = self.members.get_mut(&username).unwrap();
                             from.user.set_new_name(new_name.clone());
 
                             let app = from.clone();
                             self.members.insert(new_name.clone(), app);
                             self.members.remove(&old_name);
                             self.names.insert(user_id, new_name.clone());
-                            user_name = new_name
+                            username = new_name
                         }
                         Command::Msg(to, msg) => {
-                            let from = self.members.get_mut(&user_name).unwrap().clone();
+                            let from = self.members.get_mut(&username).unwrap().clone();
 
                             match self.members.get(&to) {
                                 Some(member) if from.user.id.eq(&member.user.id) => {
                                     self.send_message(
                                         message::Error::new(
                                             from.user.clone(),
-                                            format!("you can't message yourself"),
+                                            format!("You can't message yourself"),
                                         )
                                         .into(),
                                     )
@@ -344,7 +341,7 @@ impl ServerRoom {
                                     self.send_message(
                                         message::Error::new(
                                             from.user.clone(),
-                                            format!("user is not found"),
+                                            format!("User is not found"),
                                         )
                                         .into(),
                                     )
@@ -359,11 +356,11 @@ impl ServerRoom {
                             }
                         }
                         Command::Reply(body) => 'label: {
-                            let from = self.members.get(&user_name).unwrap().clone();
+                            let from = self.members.get(&username).unwrap().clone();
                             if from.user.reply_to.is_none() {
                                 let message = message::Error::new(
                                     from.user.clone(),
-                                    "there is no message to reply to".to_string(),
+                                    "There is no message to reply to".to_string(),
                                 );
                                 self.send_message(message.into()).await;
                                 break 'label;
@@ -374,7 +371,7 @@ impl ServerRoom {
                             if target_name.is_none() {
                                 let message = message::Error::new(
                                     from.user.clone(),
-                                    "user already left the room".to_string(),
+                                    "User already left the room".to_string(),
                                 );
                                 self.send_message(message.into()).await;
                                 break 'label;
@@ -386,7 +383,7 @@ impl ServerRoom {
                             self.send_message(message.into()).await;
                         }
                         Command::Users => {
-                            let from = self.members.get(&user_name).unwrap().clone();
+                            let from = self.members.get(&username).unwrap().clone();
                             let mut usernames = self.names.values().collect::<Vec<&String>>();
                             usernames.sort_by_key(|a| a.to_lowercase());
 
@@ -405,7 +402,7 @@ impl ServerRoom {
                                 .await;
                         }
                         Command::Whois(target) => {
-                            let from = self.members.get(&user_name).unwrap().clone();
+                            let from = self.members.get(&username).unwrap().clone();
                             let message = match self.members.get(&target) {
                                 Some(member) => {
                                     message::System::new(from.user.clone(), member.user.to_string())
@@ -413,14 +410,14 @@ impl ServerRoom {
                                 }
                                 None => message::Error::new(
                                     from.user.clone(),
-                                    "user is not found".to_string(),
+                                    "User is not found".to_string(),
                                 )
                                 .into(),
                             };
                             self.send_message(message).await;
                         }
                         Command::Slap(target) => 'label: {
-                            let from = self.members.get_mut(&user_name).unwrap().clone();
+                            let from = self.members.get_mut(&username).unwrap().clone();
                             if target.is_none() {
                                 let message = message::Emote::new(
                                     from.user.clone(),
@@ -442,14 +439,14 @@ impl ServerRoom {
                             } else {
                                 message::Error::new(
                                     from.user.clone(),
-                                    "that slippin' monkey is not in the room".to_string(),
+                                    "That slippin' monkey is not in the room".to_string(),
                                 )
                                 .into()
                             };
                             self.send_message(message).await;
                         }
                         Command::Shrug => {
-                            let from = self.members.get_mut(&user_name).unwrap().clone();
+                            let from = self.members.get_mut(&username).unwrap().clone();
                             self.send_message(
                                 message::Emote::new(from.user.clone(), "¯\\_(ツ)_/¯".to_string())
                                     .into(),
@@ -457,49 +454,57 @@ impl ServerRoom {
                             .await;
                         }
                         Command::Me(action) => {
-                            let from = self.members.get_mut(&user_name).unwrap().clone();
-                            self.send_message(
-                                message::Emote::new(
-                                    from.user.clone(),
-                                    match action {
-                                        Some(s) => format!("{}", s),
-                                        None => format!("is at a loss for words."),
-                                    },
-                                )
-                                .into(),
-                            )
-                            .await;
+                            let from = self.members.get_mut(&username).unwrap().clone();
+                            let message = message::Emote::new(
+                                from.user.clone(),
+                                match action {
+                                    Some(s) => format!("{}", s),
+                                    None => format!("is at a loss for words."),
+                                },
+                            );
+                            self.send_message(message.into()).await;
                         }
                         Command::Help => {
-                            let from = self.members.get_mut(&user_name).unwrap().clone();
-                            self.send_message(
-                                message::System::new(
-                                    from.user.clone(),
-                                    format!(
-                                        "Available commands: {}{}",
-                                        utils::NEWLINE,
-                                        Command::to_string()
-                                    ),
-                                )
-                                .into(),
-                            )
-                            .await;
+                            let from = self.members.get_mut(&username).unwrap().clone();
+                            let message = message::System::new(
+                                from.user.clone(),
+                                format!(
+                                    "Available commands: {}{}",
+                                    utils::NEWLINE,
+                                    Command::to_string()
+                                ),
+                            );
+                            self.send_message(message.into()).await;
+                        }
+                        Command::Quiet => {
+                            let app = self.members.get_mut(&username).unwrap();
+                            app.user.switch_quiet_mode();
+
+                            let message = message::System::new(
+                                app.user.clone(),
+                                match app.user.quiet {
+                                    true => "Quiet mode is toggled ON",
+                                    false => "Quiet mode is toggled OFF",
+                                }
+                                .to_string(),
+                            );
+                            self.send_message(message.into()).await;
                         }
                     }
 
-                    let member = self.members.get_mut(&user_name).unwrap();
+                    let member = self.members.get_mut(&username).unwrap();
                     member.state.input.clear();
                 }
                 KeyCode::Backspace => {
-                    let member = self.members.get_mut(&user_name).unwrap();
+                    let member = self.members.get_mut(&username).unwrap();
                     member.state.input.pop();
                 }
                 KeyCode::CtrlW => {
-                    let member = self.members.get_mut(&user_name).unwrap();
+                    let member = self.members.get_mut(&username).unwrap();
                     member.state.input.remove_last_word();
                 }
                 KeyCode::Char(_) | KeyCode::Space => {
-                    let member = self.members.get_mut(&user_name).unwrap();
+                    let member = self.members.get_mut(&username).unwrap();
                     member.state.input.extend(data);
                 }
                 _ => {}

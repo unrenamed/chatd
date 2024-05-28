@@ -51,6 +51,9 @@ pub enum Command {
     ))]
     Shrug,
 
+    #[strum(props(Cmd = "/quiet", Help = "Silence room announcements"))]
+    Quiet,
+
     #[strum(props(
         Cmd = "/me",
         Args = "[action]",
@@ -128,6 +131,7 @@ impl Command {
                 None => Ok(Command::Slap(None)),
             },
             b"/shrug" => Ok(Command::Shrug),
+            b"/quiet" => Ok(Command::Quiet),
             b"/me" => match args.is_empty() {
                 true => Ok(Command::Me(None)),
                 false => Ok(Command::Me(Some(args.to_string()))),

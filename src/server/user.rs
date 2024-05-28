@@ -32,6 +32,7 @@ pub struct User {
     pub fingerprint: String,
     pub reply_to: Option<usize>,
     pub theme: UserTheme,
+    pub quiet: bool,
 }
 
 impl User {
@@ -45,7 +46,12 @@ impl User {
             joined_at: Utc::now(),
             reply_to: None,
             theme: Default::default(),
+            quiet: false,
         }
+    }
+
+    pub fn switch_quiet_mode(&mut self) {
+        self.quiet = !self.quiet;
     }
 
     pub fn go_away(&mut self, reason: String) {
