@@ -15,7 +15,7 @@ use super::{state::UserState, user::User};
 
 type Terminal = Arc<Mutex<TerminalHandle>>;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct MessageChannel {
     sender: mpsc::Sender<Message>,
     receiver: Arc<Mutex<mpsc::Receiver<Message>>>,
@@ -83,7 +83,7 @@ impl App {
             )?;
         }
 
-        if let Ok(msg) = self.channel.receive().await {
+        while let Ok(msg) = self.channel.receive().await {
             queue!(
                 self.terminal.lock().await,
                 style::Print(msg.format(&self.user)),
