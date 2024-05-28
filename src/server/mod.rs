@@ -16,6 +16,7 @@ use self::terminal::TerminalHandle;
 mod app;
 mod client_info;
 mod command;
+mod history;
 mod input;
 mod message;
 mod motd;

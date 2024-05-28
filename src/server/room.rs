@@ -1,20 +1,16 @@
 use std::{collections::HashMap, sync::Arc};
 
-use circular_buffer::CircularBuffer;
 use log::info;
 use terminal_keycode::{Decoder, KeyCode};
 use tokio::sync::Mutex;
 
-use crate::{
-    server::{
-        command::{Command, CommandParseError},
-        user,
-    },
-    utils,
-};
+use crate::server::command::{Command, CommandParseError};
+use crate::server::user;
+use crate::utils;
 
 use super::{
     app::{self, MessageChannel},
+    history::MessageHistory,
     message::{self, Message},
     motd::Motd,
     state::UserState,
@@ -22,18 +18,15 @@ use super::{
     user::User,
 };
 
-const MESSAGE_HISTORY_LEN: usize = 20;
-
 type UserId = usize;
 type UserName = String;
-type MessageHistory = CircularBuffer<MESSAGE_HISTORY_LEN, Message>;
 
 #[derive(Clone)]
 pub struct ServerRoom {
     pub names: HashMap<UserId, UserName>,
     members: HashMap<UserName, app::App>,
     motd: Motd,
-    history: MessageHistory,
+    history: Arc<Mutex<MessageHistory>>,
 }
 
 impl ServerRoom {
@@ -42,7 +35,7 @@ impl ServerRoom {
             names: HashMap::new(),
             members: HashMap::new(),
             motd: Default::default(),
-            history: MessageHistory::new(),
+            history: Arc::new(Mutex::new(MessageHistory::new())),
         }
     }
 
@@ -93,13 +86,11 @@ impl ServerRoom {
     }
 
     pub async fn feed_history(&mut self, username: &UserName) {
-        let history = self.history.clone();
         let app = self.members.get(username).unwrap();
-        for msg in history.iter() {
+        for msg in self.history.lock().await.iter() {
             if let Err(_) = app.send_message(msg.to_owned()).await {
                 continue;
             }
-            info!("Message sent!");
         }
     }
 
@@ -118,7 +109,7 @@ impl ServerRoom {
                 from.send_message(msg).await.unwrap();
             }
             Message::Public(_) => {
-                self.history.push_back(msg.clone());
+                self.history.lock().await.push(msg.clone());
                 for (_, member) in self.members.iter() {
                     if let Err(_) = member.send_message(msg.clone()).await {
                         continue;
@@ -126,7 +117,7 @@ impl ServerRoom {
                 }
             }
             Message::Emote(_) => {
-                self.history.push_back(msg.clone());
+                self.history.lock().await.push(msg.clone());
                 for (_, member) in self.members.iter() {
                     if let Err(_) = member.send_message(msg.clone()).await {
                         continue;
@@ -134,7 +125,7 @@ impl ServerRoom {
                 }
             }
             Message::Announce(_) => {
-                self.history.push_back(msg.clone());
+                self.history.lock().await.push(msg.clone());
                 for (_, member) in self.members.iter() {
                     if member.user.quiet {
                         continue;

@@ -4,31 +4,26 @@ use crate::utils::kmp::KMP;
 
 use super::user::User;
 
-/// Messages:
-/// - public: sent from a user to everyone, anyone can see it
-/// nazar: hello all
-/// - private: sent from a user to another user, not shown to anyone else
-/// [PM from nazar] psss... what's up?
-/// - emote: sent from a user to everyone, like a away or back event
-/// ** user has gone away: will be back in 10 minutes
-/// - announce: sent from the server to everyone, like a join or leave event
-/// * user joined (Connected 14)
-/// - system: sent from the server directly to a user, not shown to anyone else. Usually in response to something, like /help.
-/// -> Error: This username is already taken
-
 #[enum_dispatch]
 #[derive(Clone)]
 pub enum Message {
+    // Sent by a user to everyone; visible to all
     Public,
-    Private,
+    // Sent by a user to everyone; shares an action or visible emotion
     Emote,
+    // Sent by the server to everyone; announces server actions
     Announce,
+    // Sent by a user to another user; private, not shown to others
+    Private,
+    // Sent by the server to a caller; usually in response to commands
     System,
+    // Sent by the server to a caller; indicates an error occurred during a command
     Error,
+    // Sent by the server to a caller; reminder about the called command
     Command,
 }
 
-// The trait for formatting a message within the context of a chat application
+/// Trait for formatting a message within the context of a chat user
 #[enum_dispatch(Message)]
 pub trait MessageFormatter: Clone {
     fn format(&self, user: &User) -> String;
