@@ -54,7 +54,7 @@ impl AppServer {
                 tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
                 let motd = room.lock().await.motd().clone();
-                for (_, member) in room.lock().await.members_mut().iter_mut() {
+                for (_, member) in room.lock().await.apps_mut().iter_mut() {
                     member
                         .render_motd(&motd)
                         .await
