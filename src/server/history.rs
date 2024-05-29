@@ -20,7 +20,7 @@ impl MessageHistory {
         self.buf.push_back(message)
     }
 
-    pub fn iter(&mut self) -> circular_buffer::Iter<Message> {
+    pub fn iter(&self) -> circular_buffer::Iter<Message> {
         self.buf.iter()
     }
 }

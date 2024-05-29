@@ -3,7 +3,6 @@ use std::{collections::HashMap, sync::Arc};
 
 use governor::clock::{Clock, Reference};
 use governor::{Quota, RateLimiter};
-use log::info;
 use nonzero_ext::nonzero;
 use terminal_keycode::{Decoder, KeyCode};
 use tokio::sync::Mutex;
@@ -70,8 +69,7 @@ impl ServerRoom {
         terminal: TerminalHandle,
         ssh_id: &[u8],
     ) {
-        info!("join {}", user_id);
-        let name = match self.is_member(&username).await {
+        let name = match self.is_room_member(&username) {
             true => User::gen_rand_name(),
             false => username,
         };
@@ -83,14 +81,14 @@ impl ServerRoom {
             fingerpint,
         );
 
-        let member = app::App {
+        let app = app::App {
             user: user.clone(),
             state: UserState::new(),
             terminal: Arc::new(Mutex::new(terminal)),
             channel: MessageChannel::new(),
         };
 
-        self.apps.insert(name.clone(), member.clone());
+        self.apps.insert(name.clone(), app.clone());
         self.names.insert(user_id, name.clone());
         self.ratelims.insert(
             user_id,
@@ -99,13 +97,13 @@ impl ServerRoom {
 
         self.feed_history(&name).await;
 
-        let join_msg_body = format!("joined. (Connected: {})", self.apps.len());
-        self.send_message(message::Announce::new(user, join_msg_body).into())
-            .await;
+        let message =
+            message::Announce::new(user, format!("joined. (Connected: {})", self.apps.len()));
+        self.send_message(message.into()).await;
     }
 
     pub async fn feed_history(&mut self, username: &UserName) {
-        let app = self.apps.get(username).unwrap();
+        let app = self.find_app(username);
         for msg in self.history.iter() {
             if let Err(_) = app.send_message(msg.to_owned()).await {
                 continue;
@@ -116,49 +114,49 @@ impl ServerRoom {
     pub async fn send_message(&mut self, msg: Message) {
         match msg {
             Message::System(ref m) => {
-                let from = self.apps.get(&m.from.username).unwrap();
-                from.send_message(msg).await.unwrap();
+                let app = self.find_app(&m.from.username);
+                app.send_message(msg).await.unwrap();
             }
             Message::Command(ref m) => {
-                let from = self.apps.get(&m.from.username).unwrap();
-                from.send_message(msg).await.unwrap();
+                let app = self.find_app(&m.from.username);
+                app.send_message(msg).await.unwrap();
             }
             Message::Error(ref m) => {
-                let from = self.apps.get(&m.from.username).unwrap();
-                from.send_message(msg).await.unwrap();
+                let app = self.find_app(&m.from.username);
+                app.send_message(msg).await.unwrap();
             }
             Message::Public(_) => {
                 self.history.push(msg.clone());
-                for (_, member) in self.apps.iter() {
-                    if let Err(_) = member.send_message(msg.clone()).await {
+                for (_, app) in self.apps.iter() {
+                    if let Err(_) = app.send_message(msg.clone()).await {
                         continue;
                     }
                 }
             }
             Message::Emote(_) => {
                 self.history.push(msg.clone());
-                for (_, member) in self.apps.iter() {
-                    if let Err(_) = member.send_message(msg.clone()).await {
+                for (_, app) in self.apps.iter() {
+                    if let Err(_) = app.send_message(msg.clone()).await {
                         continue;
                     }
                 }
             }
             Message::Announce(_) => {
                 self.history.push(msg.clone());
-                for (_, member) in self.apps.iter() {
-                    if member.user.quiet {
+                for (_, app) in self.apps.iter() {
+                    if app.user.quiet {
                         continue;
                     }
-                    if let Err(_) = member.send_message(msg.clone()).await {
+                    if let Err(_) = app.send_message(msg.clone()).await {
                         continue;
                     }
                 }
             }
             Message::Private(ref m) => {
-                let from = self.apps.get(&m.from.username).unwrap();
+                let from = self.find_app(&m.from.username);
                 from.send_message(msg.clone()).await.unwrap();
 
-                let to = self.apps.get(&m.to.username).unwrap();
+                let to = self.find_app(&m.to.username);
                 to.send_message(msg).await.unwrap();
             }
         }
@@ -171,107 +169,83 @@ impl ServerRoom {
         for keycode in decoder.write(data[0]) {
             match keycode {
                 KeyCode::Enter => {
-                    let user = self
-                        .apps
-                        .get_mut(&username)
-                        .map(|a| a.user.clone())
-                        .unwrap();
+                    let app = self.find_app(&username);
+                    let user = app.user.clone();
+
                     let ratelimit = self.ratelims.get(&user_id).unwrap();
                     let err = ratelimit.lock().await.check().err();
-                    if let Some(e) = err {
+
+                    if let Some(not_until) = err {
                         let now = governor::clock::QuantaClock::default().now();
-                        let next_allowed_nanos = e.earliest_possible().duration_since(now).as_u64();
+                        let next_allowed_nanos =
+                            not_until.earliest_possible().duration_since(now).as_u64();
                         let next_allowed_secs = Duration::from_nanos(next_allowed_nanos).as_secs();
                         let next_allowed_truncated = Duration::new(next_allowed_secs, 0);
-                        let message = message::Error::new(
-                            user,
-                            format!(
-                                "rate limit exceeded. Message dropped. Next allowed in {}",
-                                humantime::format_duration(next_allowed_truncated)
-                            ),
+
+                        let body = format!(
+                            "rate limit exceeded. Message dropped. Next allowed in {}",
+                            humantime::format_duration(next_allowed_truncated)
                         );
+                        let message = message::Error::new(user, body);
                         self.send_message(message.into()).await;
                         return;
                     }
 
-                    let cmd = {
-                        let member = self.apps.get_mut(&username).unwrap();
-                        Command::parse(&member.state.input.bytes())
-                    };
+                    let cmd = Command::parse(&app.state.input.bytes());
 
                     match cmd {
                         Err(err) if err == CommandParseError::NotRecognizedAsCommand => {
-                            let message = {
-                                let member = self.apps.get_mut(&username).unwrap();
-                                message::Public::new(
-                                    member.user.clone(),
-                                    member.state.input.to_str(),
-                                )
-                                .into()
-                            };
-                            self.send_message(message).await;
+                            let message = message::Public::new(user, app.state.input.to_str());
+                            self.send_message(message.into()).await;
 
-                            let member = self.apps.get_mut(&username).unwrap();
-                            member.state.input.clear();
+                            let app = self.find_app_mut(&username);
+                            app.state.input.clear();
 
                             return;
                         }
                         Err(err) => {
-                            let message = {
-                                let member = self.apps.get_mut(&username).unwrap();
-                                let mut input_iter =
-                                    std::str::from_utf8(&member.state.input.bytes())
-                                        .expect("Input must be a valid UTF-8 string")
-                                        .split_whitespace()
-                                        .into_iter();
-                                message::Command::new(
-                                    member.user.clone(),
-                                    input_iter.nth(0).unwrap().to_string(),
-                                    input_iter.collect::<Vec<_>>().join(" "),
-                                )
-                                .into()
-                            };
-                            self.send_message(message).await;
+                            let mut input_iter = std::str::from_utf8(&app.state.input.bytes())
+                                .expect("Input must be a valid UTF-8 string")
+                                .split_whitespace()
+                                .into_iter();
 
-                            let message = {
-                                let member = self.apps.get_mut(&username).unwrap();
-                                message::Error::new(member.user.clone(), format!("{}", err)).into()
-                            };
-                            self.send_message(message).await;
+                            let message = message::Command::new(
+                                user.clone(),
+                                input_iter.nth(0).unwrap().to_string(),
+                                input_iter.collect::<Vec<_>>().join(" "),
+                            );
+                            self.send_message(message.into()).await;
 
-                            let member = self.apps.get_mut(&username).unwrap();
-                            member.state.input.clear();
+                            let message = message::Error::new(user, format!("{}", err));
+                            self.send_message(message.into()).await;
+
+                            let app = self.find_app_mut(&username);
+                            app.state.input.clear();
 
                             return;
                         }
                         Ok(_) => {
-                            let message = {
-                                let member = self.apps.get_mut(&username).unwrap();
-                                let mut input_iter =
-                                    std::str::from_utf8(&member.state.input.bytes())
-                                        .expect("Input must be a valid UTF-8 string")
-                                        .split_whitespace()
-                                        .into_iter();
-                                message::Command::new(
-                                    member.user.clone(),
-                                    input_iter.nth(0).unwrap().to_string(),
-                                    input_iter.collect::<Vec<_>>().join(" "),
-                                )
-                                .into()
-                            };
-                            self.send_message(message).await;
+                            let mut input_iter = std::str::from_utf8(&app.state.input.bytes())
+                                .expect("Input must be a valid UTF-8 string")
+                                .split_whitespace()
+                                .into_iter();
+
+                            let message = message::Command::new(
+                                user.clone(),
+                                input_iter.nth(0).unwrap().to_string(),
+                                input_iter.collect::<Vec<_>>().join(" "),
+                            );
+                            self.send_message(message.into()).await;
                         }
                     }
 
                     match cmd.unwrap() {
                         Command::Exit => {
-                            let app = self.apps.get_mut(&username).unwrap().clone();
+                            let user = self.find_app(&username).user.clone();
 
-                            let duration = humantime::format_duration(app.user.joined_duration());
-                            let message = message::Announce::new(
-                                app.user.clone(),
-                                format!("left: (After {})", duration),
-                            );
+                            let duration = humantime::format_duration(user.joined_duration());
+                            let message =
+                                message::Announce::new(user, format!("left: (After {})", duration));
                             self.send_message(message.into()).await;
 
                             self.apps.remove(&username);
@@ -280,48 +254,44 @@ impl ServerRoom {
                             return;
                         }
                         Command::Away(reason) => {
-                            let from = self.apps.get_mut(&username).unwrap();
-                            from.user.go_away(reason.to_string());
+                            let app = self.find_app_mut(&username);
+                            app.user.go_away(reason.to_string());
 
                             let message = message::Emote::new(
-                                from.user.clone(),
+                                app.user.clone(),
                                 format!("has gone away: \"{}\"", reason),
                             );
                             self.send_message(message.into()).await;
                         }
                         Command::Back => {
-                            let from = self.apps.get_mut(&username).unwrap();
-                            match &from.user.status {
-                                user::UserStatus::Active => {}
-                                user::UserStatus::Away {
-                                    reason: _,
-                                    since: _,
-                                } => {
-                                    from.user.return_active();
-                                    let message = message::Emote::new(
-                                        from.user.clone(),
-                                        "is back".to_string(),
-                                    );
-                                    self.send_message(message.into()).await;
-                                }
+                            let app = self.find_app_mut(&username);
+                            if let user::UserStatus::Away {
+                                reason: _,
+                                since: _,
+                            } = &app.user.status
+                            {
+                                app.user.return_active();
+                                let message =
+                                    message::Emote::new(app.user.clone(), "is back".to_string());
+                                self.send_message(message.into()).await;
                             }
                         }
                         Command::Name(new_name) => 'label: {
-                            let from = self.apps.get_mut(&username).unwrap();
-                            let user = from.user.clone();
+                            let app = self.find_app_mut(&username);
+                            let user = app.user.clone();
 
                             if user.username == new_name {
                                 let message = message::Error::new(
-                                    user.clone(),
+                                    user,
                                     "New name is the same as the original".to_string(),
                                 );
                                 self.send_message(message.into()).await;
                                 break 'label;
                             }
 
-                            if let Some(_) = self.apps.get(&new_name) {
+                            if let Some(_) = self.try_find_app(&new_name) {
                                 let message = message::Error::new(
-                                    user.clone(),
+                                    user,
                                     format!("\"{}\" name is already taken", new_name),
                                 );
                                 self.send_message(message.into()).await;
@@ -338,113 +308,106 @@ impl ServerRoom {
                             let old_name = user.username;
                             let user_id = user.id;
 
-                            let from = self.apps.get_mut(&username).unwrap();
-                            from.user.set_new_name(new_name.clone());
+                            let app = self.find_app_mut(&username);
+                            app.user.set_new_name(new_name.clone());
 
-                            let app = from.clone();
+                            let app = app.clone();
                             self.apps.insert(new_name.clone(), app);
                             self.apps.remove(&old_name);
                             self.names.insert(user_id, new_name.clone());
                             username = new_name
                         }
                         Command::Msg(to, msg) => {
-                            let from = self.apps.get_mut(&username).unwrap().clone();
+                            let app = self.find_app(&username);
+                            let from = app.user.clone();
 
-                            match self.apps.get(&to) {
-                                Some(member) if from.user.id.eq(&member.user.id) => {
-                                    self.send_message(
-                                        message::Error::new(
-                                            from.user.clone(),
-                                            format!("You can't message yourself"),
-                                        )
-                                        .into(),
-                                    )
-                                    .await;
+                            match self.try_find_app(&to).map(|a| &a.user) {
+                                Some(to) if from.id.eq(&to.id) => {
+                                    let message = message::Error::new(
+                                        from.clone(),
+                                        format!("You can't message yourself"),
+                                    );
+                                    self.send_message(message.into()).await;
                                 }
-                                Some(member) => {
-                                    let target_status = member.user.status.clone();
-                                    let target_name = member.user.username.clone();
+                                Some(to) => {
+                                    let status = to.status.clone();
+                                    let name = to.username.clone();
 
-                                    self.send_message(
-                                        message::Private::new(
-                                            from.user.clone(),
-                                            member.user.clone(),
-                                            msg.to_string(),
-                                        )
-                                        .into(),
-                                    )
-                                    .await;
+                                    let message = message::Private::new(
+                                        from.clone(),
+                                        to.clone(),
+                                        msg.to_string(),
+                                    );
+                                    self.send_message(message.into()).await;
 
-                                    match target_status {
+                                    match status {
                                         user::UserStatus::Away { reason, since: _ } => {
-                                            self.send_message(
-                                                message::System::new(
-                                                    from.user.clone(),
-                                                    format!(
-                                                        "Sent PM to {}, but they're away now: {}",
-                                                        target_name, reason
-                                                    ),
-                                                )
-                                                .into(),
-                                            )
-                                            .await;
+                                            let message = message::System::new(
+                                                from.clone(),
+                                                format!(
+                                                    "Sent PM to {}, but they're away now: {}",
+                                                    name, reason
+                                                ),
+                                            );
+                                            self.send_message(message.into()).await;
                                         }
                                         user::UserStatus::Active => {}
                                     }
                                 }
                                 None => {
-                                    self.send_message(
-                                        message::Error::new(
-                                            from.user.clone(),
-                                            format!("User is not found"),
-                                        )
-                                        .into(),
-                                    )
-                                    .await;
+                                    let message = message::Error::new(
+                                        from.clone(),
+                                        format!("User is not found"),
+                                    );
+                                    self.send_message(message.into()).await;
                                 }
                             }
 
-                            if let Some(to) = self.apps.get_mut(&to) {
-                                if !from.user.id.eq(&to.user.id) {
-                                    to.user.set_reply_to(from.user.id);
+                            if let Some(to) = self.try_find_app_mut(&to).map(|a| &mut a.user) {
+                                if !from.id.eq(&to.id) {
+                                    to.set_reply_to(from.id);
                                 }
                             }
                         }
-                        Command::Reply(body) => 'label: {
-                            let from = self.apps.get(&username).unwrap().clone();
-                            if from.user.reply_to.is_none() {
+                        Command::Reply(message_body) => 'label: {
+                            let app = self.find_app(&username);
+                            let from = app.user.clone();
+
+                            if from.reply_to.is_none() {
                                 let message = message::Error::new(
-                                    from.user.clone(),
+                                    from.clone(),
                                     "There is no message to reply to".to_string(),
                                 );
                                 self.send_message(message.into()).await;
                                 break 'label;
                             }
 
-                            let target_id = &from.user.reply_to.unwrap();
+                            let target_id = &from.reply_to.unwrap();
                             let target_name = self.names.get(&target_id);
                             if target_name.is_none() {
                                 let message = message::Error::new(
-                                    from.user.clone(),
+                                    from.clone(),
                                     "User already left the room".to_string(),
                                 );
                                 self.send_message(message.into()).await;
                                 break 'label;
                             }
 
-                            let to = self.apps.get(target_name.unwrap()).unwrap().clone();
-                            let message =
-                                message::Private::new(from.user.clone(), to.user.clone(), body);
+                            let app = self.find_app(target_name.unwrap());
+                            let to = app.user.clone();
+                            let message = message::Private::new(from, to, message_body);
                             self.send_message(message.into()).await;
                         }
                         Command::Users => {
-                            let from = self.apps.get(&username).unwrap().clone();
+                            let app = self.find_app(&username);
+                            let user = app.user.clone();
+
                             let mut usernames = self.names.values().collect::<Vec<&String>>();
                             usernames.sort_by_key(|a| a.to_lowercase());
 
                             let colorized_names = usernames
                                 .iter()
-                                .map(|u| from.user.theme.style_username(u).to_string())
+                                .map(|u| user.theme.style_username(u).to_string())
                                 .collect::<Vec<String>>();
 
                             let body = format!(
@@ -453,47 +416,47 @@ impl ServerRoom {
                                 colorized_names.join(", ")
                             );
 
-                            self.send_message(message::System::new(from.user.clone(), body).into())
-                                .await;
+                            let message = message::System::new(user, body);
+                            self.send_message(message.into()).await;
                         }
-                        Command::Whois(target) => {
-                            let from = self.apps.get(&username).unwrap().clone();
-                            let message = match self.apps.get(&target) {
-                                Some(member) => {
-                                    message::System::new(from.user.clone(), member.user.to_string())
-                                        .into()
+                        Command::Whois(target_name) => {
+                            let app = self.find_app(&username);
+                            let user = app.user.clone();
+                            let message = match self.try_find_app(&target_name).map(|app| &app.user)
+                            {
+                                Some(target) => {
+                                    message::System::new(user, target.to_string()).into()
                                 }
-                                None => message::Error::new(
-                                    from.user.clone(),
-                                    "User is not found".to_string(),
-                                )
-                                .into(),
+                                None => message::Error::new(user, "User is not found".to_string())
+                                    .into(),
                             };
                             self.send_message(message).await;
                         }
-                        Command::Slap(target) => 'label: {
-                            let from = self.apps.get_mut(&username).unwrap().clone();
-                            if target.is_none() {
+                        Command::Slap(target_name) => 'label: {
+                            let app = self.find_app(&username);
+                            let user = app.user.clone();
+
+                            if target_name.is_none() {
                                 let message = message::Emote::new(
-                                    from.user.clone(),
+                                    user,
                                     "hits himself with a squishy banana.".to_string(),
                                 );
                                 self.send_message(message.into()).await;
                                 break 'label;
                             }
 
-                            let target = target.unwrap();
-                            let target = self.apps.get_mut(&target).map(|app| &mut app.user);
+                            let target_name = target_name.unwrap();
+                            let target = self.try_find_app_mut(&target_name).map(|app| &app.user);
 
-                            let message = if let Some(u) = target {
+                            let message = if let Some(t) = target {
                                 message::Emote::new(
-                                    from.user.clone(),
-                                    format!("hits {} with a squishy banana.", u.username),
+                                    user,
+                                    format!("hits {} with a squishy banana.", t.username),
                                 )
                                 .into()
                             } else {
                                 message::Error::new(
-                                    from.user.clone(),
+                                    user,
                                     "That slippin' monkey is not in the room".to_string(),
                                 )
                                 .into()
@@ -501,17 +464,16 @@ impl ServerRoom {
                             self.send_message(message).await;
                         }
                         Command::Shrug => {
-                            let from = self.apps.get_mut(&username).unwrap().clone();
-                            self.send_message(
-                                message::Emote::new(from.user.clone(), "¯\\_(ツ)_/¯".to_string())
-                                    .into(),
-                            )
-                            .await;
+                            let app = self.find_app(&username);
+                            let user = app.user.clone();
+                            let message = message::Emote::new(user, "¯\\_(ツ)_/¯".to_string());
+                            self.send_message(message.into()).await;
                         }
                         Command::Me(action) => {
-                            let from = self.apps.get_mut(&username).unwrap().clone();
+                            let app = self.find_app(&username);
+                            let user = app.user.clone();
                             let message = message::Emote::new(
-                                from.user.clone(),
+                                user,
                                 match action {
                                     Some(s) => format!("{}", s),
                                     None => format!("is at a loss for words."),
@@ -520,9 +482,10 @@ impl ServerRoom {
                             self.send_message(message.into()).await;
                         }
                         Command::Help => {
-                            let from = self.apps.get_mut(&username).unwrap().clone();
+                            let app = self.find_app(&username);
+                            let user = app.user.clone();
                             let message = message::System::new(
-                                from.user.clone(),
+                                user,
                                 format!(
                                     "Available commands: {}{}",
                                     utils::NEWLINE,
@@ -532,9 +495,8 @@ impl ServerRoom {
                             self.send_message(message.into()).await;
                         }
                         Command::Quiet => {
-                            let app = self.apps.get_mut(&username).unwrap();
+                            let app = self.find_app_mut(&username);
                             app.user.switch_quiet_mode();
-
                             let message = message::System::new(
                                 app.user.clone(),
                                 match app.user.quiet {
@@ -547,27 +509,47 @@ impl ServerRoom {
                         }
                     }
 
-                    let member = self.apps.get_mut(&username).unwrap();
-                    member.state.input.clear();
+                    let app = self.find_app_mut(&username);
+                    app.state.input.clear();
                 }
                 KeyCode::Backspace => {
-                    let member = self.apps.get_mut(&username).unwrap();
-                    member.state.input.pop();
+                    let app = self.find_app_mut(&username);
+                    app.state.input.pop();
                 }
                 KeyCode::CtrlW => {
-                    let member = self.apps.get_mut(&username).unwrap();
-                    member.state.input.remove_last_word();
+                    let app = self.find_app_mut(&username);
+                    app.state.input.remove_last_word();
                 }
                 KeyCode::Char(_) | KeyCode::Space => {
-                    let member = self.apps.get_mut(&username).unwrap();
-                    member.state.input.extend(data);
+                    let app = self.find_app_mut(&username);
+                    app.state.input.extend(data);
                 }
                 _ => {}
             }
         }
     }
 
-    async fn is_member(&self, username: &UserName) -> bool {
+    fn is_room_member(&self, username: &UserName) -> bool {
         self.apps.contains_key(username)
+    }
+
+    fn find_app(&self, username: &UserName) -> &app::App {
+        self.apps
+            .get(username)
+            .expect("User MUST have an app within a server room")
+    }
+
+    fn find_app_mut(&mut self, username: &UserName) -> &mut app::App {
+        self.apps
+            .get_mut(username)
+            .expect("User MUST have an app within a server room")
+    }
+
+    fn try_find_app(&self, username: &UserName) -> Option<&app::App> {
+        self.apps.get(username)
+    }
+
+    fn try_find_app_mut(&mut self, username: &UserName) -> Option<&mut app::App> {
+        self.apps.get_mut(username)
     }
 }
