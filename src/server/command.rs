@@ -85,12 +85,13 @@ impl fmt::Display for CommandParseError {
 impl Command {
     pub fn parse(bytes: &[u8]) -> Result<Command, CommandParseError> {
         let (cmd, args) = split_at_first_space(bytes);
-        if !cmd.starts_with(&[0x2f]) {
+        if !cmd.starts_with(b"/") {
             return Err(CommandParseError::NotRecognizedAsCommand);
         }
 
-        let args = std::str::from_utf8(args).expect("Command arguments to be a valid UTF-8 string");
-        let mut args_iter = args.split_whitespace().into_iter();
+        let args = std::str::from_utf8(args)
+            .expect("Command arguments to be a valid UTF-8 string")
+            .trim_start();
 
         match cmd {
             b"/exit" => Ok(Command::Exit),
@@ -99,34 +100,37 @@ impl Command {
                 false => Ok(Command::Away(args.to_string())),
             },
             b"/back" => Ok(Command::Back),
-            b"/name" => match args_iter.nth(0) {
+            b"/name" => match args.splitn(2, ' ').nth(0) {
                 Some(new_name) => Ok(Command::Name(new_name.to_string())),
                 None => Err(CommandParseError::ArgumentExpected(format!("new name"))),
             },
             b"/msg" => {
-                let user = args_iter.nth(0);
-                if user.is_none() {
-                    return Err(CommandParseError::ArgumentExpected(format!("new name")));
+                let mut iter = args.splitn(2, ' ');
+                let user = iter.next();
+                if user.is_none() || user.unwrap().is_empty() {
+                    return Err(CommandParseError::ArgumentExpected(format!("user name")));
                 }
-                let body = args_iter.collect::<Vec<_>>().join(" ");
-                if body.is_empty() {
+                let body = iter.next();
+                if body.is_none() || body.unwrap().is_empty() {
                     return Err(CommandParseError::ArgumentExpected(format!("message body")));
                 };
-                Ok(Command::Msg(user.unwrap().to_string(), body))
+                Ok(Command::Msg(
+                    user.unwrap().to_string(),
+                    body.unwrap().trim_start().to_string(),
+                ))
             }
             b"/reply" => {
-                let body = args_iter.collect::<Vec<_>>().join(" ");
-                if body.is_empty() {
+                if args.is_empty() {
                     return Err(CommandParseError::ArgumentExpected(format!("message body")));
                 };
-                Ok(Command::Reply(body))
+                Ok(Command::Reply(args.to_string()))
             }
             b"/users" => Ok(Command::Users),
-            b"/whois" => match args_iter.nth(0) {
+            b"/whois" => match args.splitn(2, ' ').nth(0) {
                 Some(user) => Ok(Command::Whois(user.to_string())),
                 None => Err(CommandParseError::ArgumentExpected(format!("user name"))),
             },
-            b"/slap" => match args_iter.nth(0) {
+            b"/slap" => match args.splitn(2, ' ').nth(0) {
                 Some(user) => Ok(Command::Slap(Some(user.to_string()))),
                 None => Ok(Command::Slap(None)),
             },

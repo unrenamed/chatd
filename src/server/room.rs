@@ -30,6 +30,7 @@ type RateLimit = RateLimiter<
     governor::middleware::NoOpMiddleware,
 >;
 
+const INPUT_MAX_LEN: usize = 1024;
 const MESSAGE_MAX_BURST: std::num::NonZeroU32 = nonzero!(10u32);
 const MESSAGE_RATE_QUOTA: Quota = Quota::per_second(MESSAGE_MAX_BURST);
 
@@ -191,6 +192,22 @@ impl ServerRoom {
                         return;
                     }
 
+                    let input_str = std::str::from_utf8(&app.state.input.bytes())
+                        .expect("Input must be a valid UTF-8 string");
+
+                    if input_str.trim().is_empty() {
+                        return;
+                    }
+
+                    if input_str.len() > INPUT_MAX_LEN {
+                        let message = message::Error::new(
+                            user,
+                            "Message dropped. Input is too long".to_string(),
+                        );
+                        self.send_message(message.into()).await;
+                        return;
+                    }
+
                     let cmd = Command::parse(&app.state.input.bytes());
 
                     match cmd {
@@ -204,16 +221,8 @@ impl ServerRoom {
                             return;
                         }
                         Err(err) => {
-                            let mut input_iter = std::str::from_utf8(&app.state.input.bytes())
-                                .expect("Input must be a valid UTF-8 string")
-                                .split_whitespace()
-                                .into_iter();
-
-                            let message = message::Command::new(
-                                user.clone(),
-                                input_iter.nth(0).unwrap().to_string(),
-                                input_iter.collect::<Vec<_>>().join(" "),
-                            );
+                            let message =
+                                message::Command::new(user.clone(), input_str.to_string());
                             self.send_message(message.into()).await;
 
                             let message = message::Error::new(user, format!("{}", err));
@@ -225,16 +234,8 @@ impl ServerRoom {
                             return;
                         }
                         Ok(_) => {
-                            let mut input_iter = std::str::from_utf8(&app.state.input.bytes())
-                                .expect("Input must be a valid UTF-8 string")
-                                .split_whitespace()
-                                .into_iter();
-
-                            let message = message::Command::new(
-                                user.clone(),
-                                input_iter.nth(0).unwrap().to_string(),
-                                input_iter.collect::<Vec<_>>().join(" "),
-                            );
+                            let message =
+                                message::Command::new(user.clone(), input_str.to_string());
                             self.send_message(message.into()).await;
                         }
                     }
@@ -251,6 +252,7 @@ impl ServerRoom {
                             self.apps.remove(&username);
                             self.names.remove(&user_id);
                             self.ratelims.remove(&user_id);
+
                             return;
                         }
                         Command::Away(reason) => {

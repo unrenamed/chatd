@@ -192,23 +192,21 @@ impl MessageFormatter for Error {
 #[derive(Clone, Debug)]
 pub struct Command {
     pub from: User,
-    pub cmd: String,
-    pub args: String,
+    pub body: String,
 }
 
 impl Command {
-    pub fn new(from: User, cmd: String, args: String) -> Self {
-        Self { from, cmd, args }
+    pub fn new(from: User, body: String) -> Self {
+        Self { from, body }
     }
 }
 
 impl MessageFormatter for Command {
     fn format(&self, user: &User) -> String {
         format!(
-            "[{}] {} {}",
+            "[{}] {}",
             user.theme.style_username(&self.from.username),
-            user.theme.style_text(&self.cmd),
-            user.theme.style_text(&self.args)
+            user.theme.style_text(&self.body),
         )
     }
 }
