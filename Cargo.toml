@@ -24,3 +24,5 @@ humantime = "2.1.0"
 strum = { version = "0.26", features = ["derive"] }
 enum_dispatch = "0.3.13"
 circular-buffer = "0.1.7"
+governor = "0.6.3"
+nonzero_ext = "0.3.0"

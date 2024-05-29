@@ -1,6 +1,10 @@
+use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 
+use governor::clock::{Clock, Reference};
+use governor::{Quota, RateLimiter};
 use log::info;
+use nonzero_ext::nonzero;
 use terminal_keycode::{Decoder, KeyCode};
 use tokio::sync::Mutex;
 
@@ -20,13 +24,23 @@ use super::{
 
 type UserId = usize;
 type UserName = String;
+type RateLimit = RateLimiter<
+    governor::state::NotKeyed,
+    governor::state::InMemoryState,
+    governor::clock::DefaultClock,
+    governor::middleware::NoOpMiddleware,
+>;
+
+const MESSAGE_MAX_BURST: std::num::NonZeroU32 = nonzero!(10u32);
+const MESSAGE_RATE_QUOTA: Quota = Quota::per_second(MESSAGE_MAX_BURST);
 
 #[derive(Clone)]
 pub struct ServerRoom {
     pub names: HashMap<UserId, UserName>,
     members: HashMap<UserName, app::App>,
+    ratelims: HashMap<UserId, Arc<Mutex<RateLimit>>>,
+    history: MessageHistory,
     motd: Motd,
-    history: Arc<Mutex<MessageHistory>>,
 }
 
 impl ServerRoom {
@@ -34,8 +48,9 @@ impl ServerRoom {
         Self {
             names: HashMap::new(),
             members: HashMap::new(),
+            ratelims: HashMap::new(),
+            history: MessageHistory::new(),
             motd: Default::default(),
-            history: Arc::new(Mutex::new(MessageHistory::new())),
         }
     }
 
@@ -77,6 +92,7 @@ impl ServerRoom {
 
         self.members.insert(name.clone(), member.clone());
         self.names.insert(user_id, name.clone());
+        self.ratelims.insert(user_id, Arc::new(Mutex::new(RateLimit::direct(MESSAGE_RATE_QUOTA))));
 
         self.feed_history(&name).await;
 
@@ -87,7 +103,7 @@ impl ServerRoom {
 
     pub async fn feed_history(&mut self, username: &UserName) {
         let app = self.members.get(username).unwrap();
-        for msg in self.history.lock().await.iter() {
+        for msg in self.history.iter() {
             if let Err(_) = app.send_message(msg.to_owned()).await {
                 continue;
             }
@@ -109,7 +125,7 @@ impl ServerRoom {
                 from.send_message(msg).await.unwrap();
             }
             Message::Public(_) => {
-                self.history.lock().await.push(msg.clone());
+                self.history.push(msg.clone());
                 for (_, member) in self.members.iter() {
                     if let Err(_) = member.send_message(msg.clone()).await {
                         continue;
@@ -117,7 +133,7 @@ impl ServerRoom {
                 }
             }
             Message::Emote(_) => {
-                self.history.lock().await.push(msg.clone());
+                self.history.push(msg.clone());
                 for (_, member) in self.members.iter() {
                     if let Err(_) = member.send_message(msg.clone()).await {
                         continue;
@@ -125,7 +141,7 @@ impl ServerRoom {
                 }
             }
             Message::Announce(_) => {
-                self.history.lock().await.push(msg.clone());
+                self.history.push(msg.clone());
                 for (_, member) in self.members.iter() {
                     if member.user.quiet {
                         continue;
@@ -152,6 +168,25 @@ impl ServerRoom {
         for keycode in decoder.write(data[0]) {
             match keycode {
                 KeyCode::Enter => {
+                    let user = self.members.get_mut(&username).map(|a| a.user.clone()).unwrap();
+                    let ratelimit = self.ratelims.get(&user_id).unwrap();
+                    let err = ratelimit.lock().await.check().err();
+                    if let Some(e) = err {
+                        let now = governor::clock::QuantaClock::default().now();
+                        let next_allowed_nanos = e.earliest_possible().duration_since(now).as_u64();
+                        let next_allowed_secs = Duration::from_nanos(next_allowed_nanos).as_secs();
+                        let next_allowed_truncated = Duration::new(next_allowed_secs, 0);
+                        let message = message::Error::new(
+                            user,
+                            format!(
+                                "rate limit exceeded. Message dropped. Next allowed in {}",
+                                humantime::format_duration(next_allowed_truncated)
+                            ),
+                        );
+                        self.send_message(message.into()).await;
+                        return;
+                    }
+
                     let cmd = {
                         let member = self.members.get_mut(&username).unwrap();
                         Command::parse(&member.state.input.bytes())
@@ -234,6 +269,7 @@ impl ServerRoom {
 
                             self.members.remove(&username);
                             self.names.remove(&user_id);
+                            self.ratelims.remove(&user_id);
                             return;
                         }
                         Command::Away(reason) => {

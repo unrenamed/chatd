@@ -4,6 +4,7 @@ use super::message::Message;
 
 const MESSAGE_HISTORY_LEN: usize = 20;
 
+#[derive(Clone)]
 pub struct MessageHistory {
     buf: CircularBuffer<MESSAGE_HISTORY_LEN, Message>,
 }
