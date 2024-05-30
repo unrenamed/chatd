@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use enum_dispatch::enum_dispatch;
 
 use crate::utils::kmp::KMP;
@@ -27,17 +28,32 @@ pub enum Message {
 #[enum_dispatch(Message)]
 pub trait MessageFormatter: Clone {
     fn format(&self, user: &User) -> String;
+    fn get_created_at(&self) -> DateTime<Utc>;
+
+    fn format_with_timestamp(&self, user: &User, format: &str) -> String {
+        let timestamp = self.get_created_at().format(format);
+        format!(
+            "{} {}",
+            user.theme.style_system_text(&timestamp.to_string()),
+            self.format(user)
+        )
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct Public {
+    pub created_at: DateTime<Utc>,
     pub from: User,
     pub body: String,
 }
 
 impl Public {
     pub fn new(from: User, body: String) -> Self {
-        Self { from, body }
+        Self {
+            from,
+            body,
+            created_at: Utc::now(),
+        }
     }
 }
 
@@ -80,10 +96,15 @@ impl MessageFormatter for Public {
             body_parts.join("")
         )
     }
+
+    fn get_created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct Private {
+    pub created_at: DateTime<Utc>,
     pub from: User,
     pub to: User,
     pub body: String,
@@ -91,7 +112,12 @@ pub struct Private {
 
 impl Private {
     pub fn new(from: User, to: User, body: String) -> Self {
-        Self { from, to, body }
+        Self {
+            from,
+            to,
+            body,
+            created_at: Utc::now(),
+        }
     }
 }
 
@@ -111,17 +137,26 @@ impl MessageFormatter for Private {
             )
         }
     }
+
+    fn get_created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct Emote {
+    pub created_at: DateTime<Utc>,
     pub from: User,
     pub body: String,
 }
 
 impl Emote {
     pub fn new(from: User, body: String) -> Self {
-        Self { from, body }
+        Self {
+            from,
+            body,
+            created_at: Utc::now(),
+        }
     }
 }
 
@@ -130,17 +165,26 @@ impl MessageFormatter for Emote {
         let text = format!(" ** {} {}", &self.from.username, &self.body);
         user.theme.style_text(&text).to_string()
     }
+
+    fn get_created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct Announce {
+    pub created_at: DateTime<Utc>,
     pub from: User,
     pub body: String,
 }
 
 impl Announce {
     pub fn new(from: User, body: String) -> Self {
-        Self { from, body }
+        Self {
+            from,
+            body,
+            created_at: Utc::now(),
+        }
     }
 }
 
@@ -149,17 +193,26 @@ impl MessageFormatter for Announce {
         let text = format!(" * {} {}", &self.from.username, &self.body);
         user.theme.style_system_text(&text).to_string()
     }
+
+    fn get_created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct System {
+    pub created_at: DateTime<Utc>,
     pub from: User,
     pub body: String,
 }
 
 impl System {
     pub fn new(from: User, body: String) -> Self {
-        Self { from, body }
+        Self {
+            from,
+            body,
+            created_at: Utc::now(),
+        }
     }
 }
 
@@ -168,17 +221,26 @@ impl MessageFormatter for System {
         let text = format!("-> {}", &self.body);
         user.theme.style_system_text(&text).to_string()
     }
+
+    fn get_created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct Error {
+    pub created_at: DateTime<Utc>,
     pub from: User,
     pub body: String,
 }
 
 impl Error {
     pub fn new(from: User, body: String) -> Self {
-        Self { from, body }
+        Self {
+            from,
+            body,
+            created_at: Utc::now(),
+        }
     }
 }
 
@@ -187,17 +249,26 @@ impl MessageFormatter for Error {
         let text = format!("-> Error: {}", &self.body);
         user.theme.style_system_text(&text).to_string()
     }
+
+    fn get_created_at(&self) -> DateTime<Utc> {
+        self.created_at
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct Command {
+    pub created_at: DateTime<Utc>,
     pub from: User,
     pub body: String,
 }
 
 impl Command {
     pub fn new(from: User, body: String) -> Self {
-        Self { from, body }
+        Self {
+            from,
+            body,
+            created_at: Utc::now(),
+        }
     }
 }
 
@@ -208,5 +279,9 @@ impl MessageFormatter for Command {
             user.theme.style_username(&self.from.username),
             user.theme.style_text(&self.body),
         )
+    }
+
+    fn get_created_at(&self) -> DateTime<Utc> {
+        self.created_at
     }
 }

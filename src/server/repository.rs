@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
 
-use log::{debug, info};
+use log::info;
 use tokio::spawn;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::Mutex;
@@ -107,7 +107,7 @@ impl SessionRepository {
                             room.lock().await.leave(&id).await;
                         }
                         SessionEvent::Close => {
-                            // room.lock().await.leave(&id).await;
+                            room.lock().await.leave(&id).await;
                         }
                     }
                 }

@@ -1,8 +1,10 @@
 use crate::utils;
 
 use fmt::Write;
-use std::fmt;
+use std::{fmt, str::FromStr};
 use strum::{EnumCount, EnumIter, EnumProperty, IntoEnumIterator};
+
+use super::user::TimestampMode;
 
 #[derive(Debug, PartialEq, EnumProperty, EnumIter, EnumCount)]
 pub enum Command {
@@ -42,6 +44,13 @@ pub enum Command {
     #[strum(props(Cmd = "/whois", Args = "<user>", Help = "Information about a user"))]
     Whois(String),
 
+    #[strum(props(
+        Cmd = "/timestamp",
+        Args = "<time|datetime>",
+        Help = "Prefix messages with a UTC timestamp"
+    ))]
+    Timestamp(TimestampMode),
+
     #[strum(props(Cmd = "/slap", Args = "[user]", Help = "Show who is the boss here"))]
     Slap(Option<String>),
 
@@ -70,6 +79,7 @@ pub enum CommandParseError {
     NotRecognizedAsCommand,
     UnknownCommand,
     ArgumentExpected(String),
+    Custom(String),
 }
 
 impl fmt::Display for CommandParseError {
@@ -78,6 +88,7 @@ impl fmt::Display for CommandParseError {
             CommandParseError::NotRecognizedAsCommand => write!(f, "given input is not a command"),
             CommandParseError::UnknownCommand => write!(f, "unknown command"),
             CommandParseError::ArgumentExpected(arg) => write!(f, "{} is expected", arg),
+            CommandParseError::Custom(s) => write!(f, "{}", s),
         }
     }
 }
@@ -143,6 +154,20 @@ impl Command {
             b"/me" => match args.is_empty() {
                 true => Ok(Command::Me(None)),
                 false => Ok(Command::Me(Some(args.to_string()))),
+            },
+            b"/timestamp" => match args.splitn(2, ' ').nth(0) {
+                Some(mode) if mode.is_empty() => Err(CommandParseError::Custom(
+                    "timestamp value must be one of: time, datetime, off".to_string(),
+                )),
+                Some(mode) => match mode {
+                    "time" | "datetime" | "off" => {
+                        Ok(Command::Timestamp(TimestampMode::from_str(mode).unwrap()))
+                    }
+                    _ => Err(CommandParseError::Custom(
+                        "timestamp value must be one of: time, datetime, off".to_string(),
+                    )),
+                },
+                None => unreachable!(), // splitn returns [""] for an empty input
             },
             b"/help" => Ok(Command::Help),
             _ => Err(CommandParseError::UnknownCommand),

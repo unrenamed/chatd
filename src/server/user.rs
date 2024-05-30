@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use rand::seq::SliceRandom;
 use rand::Rng;
 use std::{fmt::Display, time::Duration};
+use strum::EnumString;
 
 use crate::utils;
 
@@ -22,6 +23,30 @@ impl Default for UserStatus {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, EnumString)]
+#[strum(ascii_case_insensitive)]
+pub enum TimestampMode {
+    Time,
+    DateTime,
+    Off,
+}
+
+impl Default for TimestampMode {
+    fn default() -> Self {
+        Self::Off
+    }
+}
+
+impl TimestampMode {
+    pub fn format(&self) -> Option<&str> {
+        match self {
+            TimestampMode::Time => Some("%H:%M"),
+            TimestampMode::DateTime => Some("%Y-%m-%d %H:%M:%S"),
+            TimestampMode::Off => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct User {
     pub id: usize,
@@ -33,6 +58,7 @@ pub struct User {
     pub reply_to: Option<usize>,
     pub theme: UserTheme,
     pub quiet: bool,
+    pub timestamp_mode: TimestampMode,
 }
 
 impl User {
@@ -42,16 +68,19 @@ impl User {
             username,
             ssh_client,
             fingerprint,
-            status: UserStatus::Active,
             joined_at: Utc::now(),
             reply_to: None,
-            theme: Default::default(),
             quiet: false,
+            ..Default::default()
         }
     }
 
     pub fn switch_quiet_mode(&mut self) {
         self.quiet = !self.quiet;
+    }
+
+    pub fn set_timestamp_mode(&mut self, mode: TimestampMode) {
+        self.timestamp_mode = mode;
     }
 
     pub fn go_away(&mut self, reason: String) {

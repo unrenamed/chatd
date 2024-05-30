@@ -12,6 +12,7 @@ use crate::server::command::{Command, CommandParseError};
 use crate::server::user;
 use crate::utils;
 
+use super::user::TimestampMode;
 use super::{
     app::{self, MessageChannel},
     history::MessageHistory,
@@ -510,6 +511,21 @@ impl ServerRoom {
                                 match app.user.quiet {
                                     true => "Quiet mode is toggled ON",
                                     false => "Quiet mode is toggled OFF",
+                                }
+                                .to_string(),
+                            );
+                            self.send_message(message.into()).await;
+                        }
+                        Command::Timestamp(mode) => {
+                            let app = self.find_app_mut(&username);
+                            app.user.set_timestamp_mode(mode);
+                            let message = message::System::new(
+                                app.user.clone(),
+                                match app.user.timestamp_mode {
+                                    TimestampMode::Time | TimestampMode::DateTime => {
+                                        "Timestamp is toggled ON, timezone is UTC"
+                                    }
+                                    TimestampMode::Off => "Timestamp is toggled OFF",
                                 }
                                 .to_string(),
                             );

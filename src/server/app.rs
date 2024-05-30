@@ -71,9 +71,11 @@ impl App {
     pub async fn render(&mut self) -> Result<(), anyhow::Error> {
         queue!(self.terminal.lock().await, cursor::Show)?;
 
-        // On the first render we CAN NOT restore cursor position because the entire screen will be cleared
+        // On the first render we CAN NOT restore cursor position because the entire
+        // screen will be cleared
         if !self.state.first_render {
-            // After saving the cursor position at the start of the user prompt, we can restore it to clear the screen part for new messages and prompt
+            // After saving the cursor position at the start of the user prompt,
+            // we can restore it to clear the screen part for new messages and prompt
             queue!(
                 self.terminal.lock().await,
                 cursor::RestorePosition,
@@ -84,7 +86,10 @@ impl App {
         while let Ok(msg) = self.channel.receive().await {
             queue!(
                 self.terminal.lock().await,
-                style::Print(msg.format(&self.user)),
+                style::Print(match self.user.timestamp_mode.format() {
+                    Some(fmt) => msg.format_with_timestamp(&self.user, fmt),
+                    None => msg.format(&self.user),
+                }),
                 style::Print(utils::NEWLINE)
             )?;
         }
