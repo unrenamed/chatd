@@ -127,12 +127,16 @@ impl Command {
             }
             b"/users" => Ok(Command::Users),
             b"/whois" => match args.splitn(2, ' ').nth(0) {
+                Some(user) if user.is_empty() => {
+                    Err(CommandParseError::ArgumentExpected(format!("user name")))
+                }
                 Some(user) => Ok(Command::Whois(user.to_string())),
-                None => Err(CommandParseError::ArgumentExpected(format!("user name"))),
+                None => unreachable!(), // splitn returns [""] for an empty input
             },
             b"/slap" => match args.splitn(2, ' ').nth(0) {
+                Some(user) if user.is_empty() => Ok(Command::Slap(None)),
                 Some(user) => Ok(Command::Slap(Some(user.to_string()))),
-                None => Ok(Command::Slap(None)),
+                None => unreachable!(), // splitn returns [""] for an empty input
             },
             b"/shrug" => Ok(Command::Shrug),
             b"/quiet" => Ok(Command::Quiet),

@@ -3,6 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use governor::clock::{Clock, Reference};
 use governor::{Quota, RateLimiter};
+use log::info;
 use nonzero_ext::nonzero;
 use terminal_keycode::{Decoder, KeyCode};
 use tokio::sync::Mutex;
@@ -68,19 +69,14 @@ impl ServerRoom {
         username: UserName,
         fingerpint: String,
         terminal: TerminalHandle,
-        ssh_id: &[u8],
+        ssh_id: String,
     ) {
         let name = match self.is_room_member(&username) {
             true => User::gen_rand_name(),
             false => username,
         };
 
-        let user = User::new(
-            user_id,
-            name.clone(),
-            String::from_utf8_lossy(ssh_id).to_string(),
-            fingerpint,
-        );
+        let user = User::new(user_id, name.clone(), ssh_id, fingerpint);
 
         let app = app::App {
             user: user.clone(),
@@ -110,6 +106,25 @@ impl ServerRoom {
                 continue;
             }
         }
+    }
+
+    pub async fn leave(&mut self, user_id: &UserId) {
+        let name = self.try_find_name(user_id);
+        if let None = name {
+            info!("No username found for {}", user_id);
+            return;
+        }
+
+        let username = name.unwrap().clone();
+        let user = self.find_app(&username).user.clone();
+
+        let duration = humantime::format_duration(user.joined_duration());
+        let message = message::Announce::new(user, format!("left: (After {})", duration));
+        self.send_message(message.into()).await;
+
+        self.apps.remove(&username);
+        self.names.remove(user_id);
+        self.ratelims.remove(user_id);
     }
 
     pub async fn send_message(&mut self, msg: Message) {
@@ -242,17 +257,8 @@ impl ServerRoom {
 
                     match cmd.unwrap() {
                         Command::Exit => {
-                            let user = self.find_app(&username).user.clone();
-
-                            let duration = humantime::format_duration(user.joined_duration());
-                            let message =
-                                message::Announce::new(user, format!("left: (After {})", duration));
-                            self.send_message(message.into()).await;
-
-                            self.apps.remove(&username);
-                            self.names.remove(&user_id);
-                            self.ratelims.remove(&user_id);
-
+                            let app = self.find_app(&username);
+                            app.terminal.lock().await.close();
                             return;
                         }
                         Command::Away(reason) => {
@@ -553,5 +559,9 @@ impl ServerRoom {
 
     fn try_find_app_mut(&mut self, username: &UserName) -> Option<&mut app::App> {
         self.apps.get_mut(username)
+    }
+
+    fn try_find_name(&self, user_id: &UserId) -> Option<&UserName> {
+        self.names.get(user_id)
     }
 }
