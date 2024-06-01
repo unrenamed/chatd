@@ -94,14 +94,19 @@ impl App {
             )?;
         }
 
+        let user_input = format!(
+            "[{}] {}",
+            self.user.theme.style_username(&self.user.username),
+            self.state.input.to_string()
+        );
+
+        let prefix_len = 3 + self.user.username.len() as u16; // 3 is the length of "[] " wrapping
+
         queue!(
             self.terminal.lock().await,
             cursor::SavePosition,
-            style::Print(format!(
-                "[{}] {}",
-                self.user.theme.style_username(&self.user.username),
-                self.state.input.to_str()
-            )),
+            style::Print(user_input),
+            cursor::MoveToColumn(prefix_len + *self.state.input.char_cursor_pos() as u16),
         )?;
 
         self.terminal.lock().await.flush()?;
