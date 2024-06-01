@@ -12,6 +12,7 @@ use crate::server::command::{Command, CommandParseError};
 use crate::server::user;
 use crate::utils;
 
+use super::theme::Theme;
 use super::user::TimestampMode;
 use super::{
     app::{self, MessageChannel},
@@ -528,6 +529,24 @@ impl ServerRoom {
                                     TimestampMode::Off => "Timestamp is toggled OFF",
                                 }
                                 .to_string(),
+                            );
+                            self.send_message(message.into()).await;
+                        }
+                        Command::Theme(theme) => {
+                            let app = self.find_app_mut(&username);
+                            let user = app.user.clone();
+                            let theme_clone = theme.clone();
+                            app.user.theme = theme.into();
+                            let message =
+                                message::System::new(user, format!("Set theme: {}", theme_clone));
+                            self.send_message(message.into()).await;
+                        }
+                        Command::Themes => {
+                            let app = self.find_app(&username);
+                            let user = app.user.clone();
+                            let message = message::System::new(
+                                user,
+                                format!("Supported themes: {}", Theme::all().join(", ")),
                             );
                             self.send_message(message.into()).await;
                         }

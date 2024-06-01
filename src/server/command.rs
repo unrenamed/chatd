@@ -4,7 +4,7 @@ use fmt::Write;
 use std::{fmt, str::FromStr};
 use strum::{EnumCount, EnumIter, EnumProperty, IntoEnumIterator};
 
-use super::user::TimestampMode;
+use super::{theme::Theme, user::TimestampMode};
 
 #[derive(Debug, PartialEq, EnumProperty, EnumIter, EnumCount)]
 pub enum Command {
@@ -50,6 +50,12 @@ pub enum Command {
         Help = "Prefix messages with a UTC timestamp"
     ))]
     Timestamp(TimestampMode),
+
+    #[strum(props(Cmd = "/theme", Args = "<theme>", Help = "Set your color theme"))]
+    Theme(Theme),
+
+    #[strum(props(Cmd = "/themes", Help = "List supported color themes"))]
+    Themes,
 
     #[strum(props(Cmd = "/slap", Args = "[user]", Help = "Show who is the boss here"))]
     Slap(Option<String>),
@@ -169,6 +175,25 @@ impl Command {
                 },
                 None => unreachable!(), // splitn returns [""] for an empty input
             },
+            b"/theme" => match args.splitn(2, ' ').nth(0) {
+                Some(theme) if theme.is_empty() => Err(CommandParseError::Custom(format!(
+                    "theme value must be one of: {}",
+                    Theme::all().join(", ")
+                ))),
+                Some(theme) => {
+                    let supported_themes = Theme::all();
+                    if supported_themes.contains(&theme.to_string()) {
+                        Ok(Command::Theme(Theme::from_str(theme).unwrap()))
+                    } else {
+                        Err(CommandParseError::Custom(format!(
+                            "theme value must be one of: {}",
+                            Theme::all().join(", ")
+                        )))
+                    }
+                }
+                None => unreachable!(), // splitn returns [""] for an empty input
+            },
+            b"/themes" => Ok(Command::Themes),
             b"/help" => Ok(Command::Help),
             _ => Err(CommandParseError::UnknownCommand),
         }
