@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use rand::seq::SliceRandom;
 use rand::Rng;
-use std::{fmt::Display, time::Duration};
+use std::{collections::BTreeSet, fmt::Display, time::Duration};
 use strum::EnumString;
 
 use crate::utils;
@@ -59,6 +59,7 @@ pub struct User {
     pub theme: UserTheme,
     pub quiet: bool,
     pub timestamp_mode: TimestampMode,
+    pub ignored: BTreeSet<usize>,
 }
 
 impl User {

@@ -38,6 +38,16 @@ pub enum Command {
     ))]
     Reply(String),
 
+    #[strum(props(Cmd = "/ignore", Args = "[user]", Help = "Hide messages from a user"))]
+    Ignore(Option<String>),
+
+    #[strum(props(
+        Cmd = "/reply",
+        Args = "<user>",
+        Help = "Stop hidding messages from a user"
+    ))]
+    Unignore(String),
+
     #[strum(props(Cmd = "/users", Help = "List users who are connected"))]
     Users,
 
@@ -194,6 +204,18 @@ impl Command {
                 None => unreachable!(), // splitn returns [""] for an empty input
             },
             b"/themes" => Ok(Command::Themes),
+            b"/ignore" => match args.splitn(2, ' ').nth(0) {
+                Some(user) if user.is_empty() => Ok(Command::Ignore(None)),
+                Some(user) => Ok(Command::Ignore(Some(user.to_string()))),
+                None => unreachable!(), // splitn returns [""] for an empty input
+            },
+            b"/unignore" => match args.splitn(2, ' ').nth(0) {
+                Some(user) if user.is_empty() => {
+                    Err(CommandParseError::ArgumentExpected(format!("user name")))
+                }
+                Some(user) => Ok(Command::Unignore(user.to_string())),
+                None => unreachable!(), // splitn returns [""] for an empty input
+            },
             b"/help" => Ok(Command::Help),
             _ => Err(CommandParseError::UnknownCommand),
         }

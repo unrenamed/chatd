@@ -143,29 +143,34 @@ impl ServerRoom {
                 let app = self.find_app(&m.from.username);
                 app.send_message(msg).await.unwrap();
             }
-            Message::Public(_) => {
+            Message::Public(ref m) => {
                 self.history.push(msg.clone());
                 for (_, app) in self.apps.iter() {
-                    if let Err(_) = app.send_message(msg.clone()).await {
+                    if app.user.ignored.contains(&m.from.id) {
+                        continue;
+                    } else if let Err(_) = app.send_message(msg.clone()).await {
                         continue;
                     }
                 }
             }
-            Message::Emote(_) => {
+            Message::Emote(ref m) => {
                 self.history.push(msg.clone());
                 for (_, app) in self.apps.iter() {
-                    if let Err(_) = app.send_message(msg.clone()).await {
+                    if app.user.ignored.contains(&m.from.id) {
+                        continue;
+                    } else if let Err(_) = app.send_message(msg.clone()).await {
                         continue;
                     }
                 }
             }
-            Message::Announce(_) => {
+            Message::Announce(ref m) => {
                 self.history.push(msg.clone());
                 for (_, app) in self.apps.iter() {
                     if app.user.quiet {
                         continue;
-                    }
-                    if let Err(_) = app.send_message(msg.clone()).await {
+                    } else if app.user.ignored.contains(&m.from.id) {
+                        continue;
+                    } else if let Err(_) = app.send_message(msg.clone()).await {
                         continue;
                     }
                 }
@@ -175,7 +180,9 @@ impl ServerRoom {
                 from.send_message(msg.clone()).await.unwrap();
 
                 let to = self.find_app(&m.to.username);
-                to.send_message(msg).await.unwrap();
+                if !to.user.ignored.contains(&m.from.id) {
+                    to.send_message(msg).await.unwrap();
+                }
             }
         }
     }
@@ -219,7 +226,7 @@ impl ServerRoom {
                     if input_str.len() > INPUT_MAX_LEN {
                         let message = message::Error::new(
                             user,
-                            "Message dropped. Input is too long".to_string(),
+                            "message dropped. Input is too long".to_string(),
                         );
                         self.send_message(message.into()).await;
                         return;
@@ -293,7 +300,7 @@ impl ServerRoom {
                             if user.username == new_name {
                                 let message = message::Error::new(
                                     user,
-                                    "New name is the same as the original".to_string(),
+                                    "new name is the same as the original".to_string(),
                                 );
                                 self.send_message(message.into()).await;
                                 break 'label;
@@ -327,7 +334,7 @@ impl ServerRoom {
                             self.names.insert(user_id, new_name.clone());
                             username = new_name
                         }
-                        Command::Msg(to, msg) => {
+                        Command::Msg(to, msg) => 'label: {
                             let app = self.find_app(&username);
                             let from = app.user.clone();
 
@@ -335,9 +342,10 @@ impl ServerRoom {
                                 Some(to) if from.id.eq(&to.id) => {
                                     let message = message::Error::new(
                                         from.clone(),
-                                        format!("You can't message yourself"),
+                                        format!("you can't message yourself"),
                                     );
                                     self.send_message(message.into()).await;
+                                    break 'label;
                                 }
                                 Some(to) => {
                                     let status = to.status.clone();
@@ -367,16 +375,15 @@ impl ServerRoom {
                                 None => {
                                     let message = message::Error::new(
                                         from.clone(),
-                                        format!("User is not found"),
+                                        format!("user is not found"),
                                     );
                                     self.send_message(message.into()).await;
+                                    break 'label;
                                 }
                             }
 
                             if let Some(to) = self.try_find_app_mut(&to).map(|a| &mut a.user) {
-                                if !from.id.eq(&to.id) {
-                                    to.set_reply_to(from.id);
-                                }
+                                to.set_reply_to(from.id);
                             }
                         }
                         Command::Reply(message_body) => 'label: {
@@ -386,7 +393,7 @@ impl ServerRoom {
                             if from.reply_to.is_none() {
                                 let message = message::Error::new(
                                     from.clone(),
-                                    "There is no message to reply to".to_string(),
+                                    "no message to reply to".to_string(),
                                 );
                                 self.send_message(message.into()).await;
                                 break 'label;
@@ -397,7 +404,7 @@ impl ServerRoom {
                             if target_name.is_none() {
                                 let message = message::Error::new(
                                     from.clone(),
-                                    "User already left the room".to_string(),
+                                    "user already left the room".to_string(),
                                 );
                                 self.send_message(message.into()).await;
                                 break 'label;
@@ -432,14 +439,14 @@ impl ServerRoom {
                         Command::Whois(target_name) => {
                             let app = self.find_app(&username);
                             let user = app.user.clone();
-                            let message = match self.try_find_app(&target_name).map(|app| &app.user)
-                            {
-                                Some(target) => {
-                                    message::System::new(user, target.to_string()).into()
-                                }
-                                None => message::Error::new(user, "User is not found".to_string())
-                                    .into(),
-                            };
+                            let message =
+                                match self.try_find_app(&target_name).map(|app| &app.user) {
+                                    Some(target) => {
+                                        message::System::new(user, target.to_string()).into()
+                                    }
+                                    None => message::Error::new(user, "user not found".to_string())
+                                        .into(),
+                                };
                             self.send_message(message).await;
                         }
                         Command::Slap(target_name) => 'label: {
@@ -467,7 +474,7 @@ impl ServerRoom {
                             } else {
                                 message::Error::new(
                                     user,
-                                    "That slippin' monkey is not in the room".to_string(),
+                                    "that slippin' monkey not in the room".to_string(),
                                 )
                                 .into()
                             };
@@ -549,6 +556,105 @@ impl ServerRoom {
                                 format!("Supported themes: {}", Theme::all().join(", ")),
                             );
                             self.send_message(message.into()).await;
+                        }
+                        Command::Ignore(target) => 'label: {
+                            let app = self.find_app(&username);
+                            let user = app.user.clone();
+
+                            if target.is_none() {
+                                let ignored_usernames: Vec<String> = user
+                                    .ignored
+                                    .iter()
+                                    .filter_map(|id| self.names.get(id))
+                                    .map(|name| user.theme.style_username(name).to_string())
+                                    .collect();
+
+                                let message_text = match ignored_usernames.is_empty() {
+                                    true => "0 users ignored".to_string(),
+                                    false => format!(
+                                        "{} users ignored: {}",
+                                        ignored_usernames.len(),
+                                        ignored_usernames.join(", ")
+                                    ),
+                                };
+
+                                let message = message::System::new(user, message_text);
+                                self.send_message(message.into()).await;
+                                break 'label;
+                            }
+
+                            let target_username = target.unwrap();
+                            match self
+                                .try_find_app(&target_username)
+                                .map(|a| a.user.id.clone())
+                            {
+                                Some(target_id) if target_id == user.id => {
+                                    let message = message::Error::new(
+                                        user.clone(),
+                                        "you can't ignore yourself".to_string(),
+                                    );
+                                    self.send_message(message.into()).await;
+                                    break 'label;
+                                }
+                                Some(target_id) if user.ignored.contains(&target_id) => {
+                                    let message = message::System::new(
+                                        user.clone(),
+                                        format!("user already in the ignored list"),
+                                    );
+                                    self.send_message(message.into()).await;
+                                    break 'label;
+                                }
+                                None => {
+                                    let message = message::Error::new(
+                                        user.clone(),
+                                        "user not found".to_string(),
+                                    );
+                                    self.send_message(message.into()).await;
+                                    break 'label;
+                                }
+                                Some(target_id) => {
+                                    self.find_app_mut(&username).user.ignored.insert(target_id);
+                                    let message = message::System::new(
+                                        user,
+                                        format!("Ignoring: {}", target_username),
+                                    );
+                                    self.send_message(message.into()).await;
+                                }
+                            }
+                        }
+                        Command::Unignore(target_username) => 'label: {
+                            let app = self.find_app(&username);
+                            let user = app.user.clone();
+
+                            match self
+                                .try_find_app(&target_username)
+                                .map(|a| a.user.id.clone())
+                            {
+                                None => {
+                                    let message = message::Error::new(
+                                        user.clone(),
+                                        "user not found".to_string(),
+                                    );
+                                    self.send_message(message.into()).await;
+                                    break 'label;
+                                }
+                                Some(target_id) if !user.ignored.contains(&target_id) => {
+                                    let message = message::Error::new(
+                                        user.clone(),
+                                        "user not in the ignored list yet".to_string(),
+                                    );
+                                    self.send_message(message.into()).await;
+                                    break 'label;
+                                }
+                                Some(target_id) => {
+                                    self.find_app_mut(&username).user.ignored.remove(&target_id);
+                                    let message = message::System::new(
+                                        user,
+                                        format!("No longer ignoring: {}", target_username),
+                                    );
+                                    self.send_message(message.into()).await;
+                                }
+                            }
                         }
                     }
 
