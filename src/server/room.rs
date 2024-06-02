@@ -16,8 +16,8 @@ use super::theme::Theme;
 use super::user::TimestampMode;
 use super::{
     app::{self, MessageChannel},
-    history::MessageHistory,
     message::{self, Message},
+    message_history::MessageHistory,
     motd::Motd,
     state::UserState,
     terminal::TerminalHandle,
@@ -236,6 +236,14 @@ impl ServerRoom {
                             .input
                             .insert_before_cursor(keycode.bytes().as_slice());
                     }
+                    KeyCode::ArrowUp => {
+                        let app = self.find_app_mut(&username);
+                        app.state.input.set_history_prev();
+                    }
+                    KeyCode::ArrowDown => {
+                        let app = self.find_app_mut(&username);
+                        app.state.input.set_history_next();
+                    }
                     KeyCode::Enter => {
                         let app = self.find_app(&username);
                         let user = app.user.clone();
@@ -298,6 +306,7 @@ impl ServerRoom {
                                 self.send_message(message.into()).await;
 
                                 let app = self.find_app_mut(&username);
+                                app.state.input.push_to_history();
                                 app.state.input.clear();
 
                                 return;
@@ -306,6 +315,9 @@ impl ServerRoom {
                                 let message =
                                     message::Command::new(user.clone(), input_str.to_string());
                                 self.send_message(message.into()).await;
+
+                                let app = self.find_app_mut(&username);
+                                app.state.input.push_to_history();
                             }
                         }
 
