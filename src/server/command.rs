@@ -42,11 +42,18 @@ pub enum Command {
     Ignore(Option<String>),
 
     #[strum(props(
-        Cmd = "/reply",
+        Cmd = "/unignore",
         Args = "<user>",
         Help = "Stop hidding messages from a user"
     ))]
     Unignore(String),
+
+    #[strum(props(
+        Cmd = "/focus",
+        Args = "[user]",
+        Help = "Only show messages from focused users. $ to reset"
+    ))]
+    Focus(Option<String>),
 
     #[strum(props(Cmd = "/users", Help = "List users who are connected"))]
     Users,
@@ -214,6 +221,11 @@ impl Command {
                     Err(CommandParseError::ArgumentExpected(format!("user name")))
                 }
                 Some(user) => Ok(Command::Unignore(user.to_string())),
+                None => unreachable!(), // splitn returns [""] for an empty input
+            },
+            b"/focus" => match args.splitn(2, ' ').nth(0) {
+                Some(users) if users.is_empty() => Ok(Command::Focus(None)),
+                Some(users) => Ok(Command::Focus(Some(users.to_string()))),
                 None => unreachable!(), // splitn returns [""] for an empty input
             },
             b"/help" => Ok(Command::Help),

@@ -60,6 +60,7 @@ pub struct User {
     pub quiet: bool,
     pub timestamp_mode: TimestampMode,
     pub ignored: BTreeSet<usize>,
+    pub focused: BTreeSet<usize>,
 }
 
 impl User {

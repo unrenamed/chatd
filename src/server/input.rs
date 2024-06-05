@@ -11,7 +11,7 @@ struct InputState {
     char_cursor_pos: usize, // Cursor position in terms of characters
 }
 
-// Struct representing user input with snapshot capability and input history 
+// Struct representing user input with snapshot capability and input history
 #[derive(Clone, Debug, Default)]
 pub struct UserInput {
     state: InputState,                                   // Current input state
@@ -25,7 +25,8 @@ impl Display for UserInput {
         write!(
             f,
             "{}",
-            std::str::from_utf8(self.state.bytes.as_slice()).unwrap()
+            std::str::from_utf8(self.state.bytes.as_slice())
+                .expect("Input must be a valid UTF-8 string")
         )
     }
 }
