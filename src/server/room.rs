@@ -1,7 +1,7 @@
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 
-use governor::clock::{Clock, Reference};
+use governor::clock::{Clock, QuantaClock, Reference};
 use governor::{Quota, RateLimiter};
 use log::info;
 use nonzero_ext::nonzero;
@@ -256,17 +256,15 @@ impl ServerRoom {
                         let ratelimit = self.ratelims.get(&user_id).unwrap();
                         let err = ratelimit.lock().await.check().err();
 
-                        if let Some(not_until) = err {
-                            let now = governor::clock::QuantaClock::default().now();
-                            let next_allowed_nanos =
-                                not_until.earliest_possible().duration_since(now).as_u64();
-                            let next_allowed_secs =
-                                Duration::from_nanos(next_allowed_nanos).as_secs();
-                            let next_allowed_truncated = Duration::new(next_allowed_secs, 0);
+                        if let Some(nu) = err {
+                            let now = QuantaClock::default().now();
+                            let remaining_nanos = nu.earliest_possible().duration_since(now);
+                            let remaining_duration = Duration::from_nanos(remaining_nanos.as_u64());
+                            let truncated_remaining_duration = Duration::new(remaining_duration.as_secs(), 0);
 
                             let body = format!(
                                 "rate limit exceeded. Message dropped. Next allowed in {}",
-                                humantime::format_duration(next_allowed_truncated)
+                                humantime::format_duration(truncated_remaining_duration)
                             );
                             let message = message::Error::new(user, body);
                             self.send_message(message.into()).await;
