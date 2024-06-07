@@ -1,27 +1,25 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use handler::ThinHandler;
 use log::info;
 use repository::SessionRepositoryEvent;
 use room::ServerRoom;
 use russh::server::*;
-use russh_keys::key::PublicKey;
+use russh_keys::key::{KeyPair, PublicKey};
 use tokio::spawn;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
-
-use crate::utils;
 
 pub use repository::SessionRepository;
 
 mod app;
 mod command;
 mod handler;
-mod message_history;
-mod input_history;
 mod input;
+mod input_history;
 mod message;
-mod motd;
+mod message_history;
 mod repository;
 mod room;
 mod state;
@@ -30,61 +28,59 @@ mod theme;
 mod tui;
 mod user;
 
-static WHITELIST_FILEPATH: &'static str = "./whitelist";
-
 #[derive(Clone)]
 pub struct AppServer {
     id_increment: usize,
+    port: u16,
+    server_keys: Vec<KeyPair>,
+    whitelist: Arc<Mutex<Option<Vec<PublicKey>>>>,
     room: Arc<Mutex<ServerRoom>>,
-    whitelist: Arc<Mutex<Vec<PublicKey>>>,
     repo_event_sender: Sender<SessionRepositoryEvent>,
 }
 
 impl AppServer {
-    pub fn new(repo_event_sender: Sender<SessionRepositoryEvent>) -> Self {
+    pub fn new(
+        port: u16,
+        server_keys: &[KeyPair],
+        whitelist: Option<Vec<PublicKey>>,
+        motd: &str,
+        repo_event_sender: Sender<SessionRepositoryEvent>,
+    ) -> Self {
         Self {
+            port,
             id_increment: 0,
-            room: Arc::new(Mutex::new(ServerRoom::new())),
-            whitelist: Arc::new(Mutex::new(Vec::new())),
+            server_keys: server_keys.to_vec(),
+            whitelist: Arc::new(Mutex::new(whitelist.map(|w| w.to_vec()))),
+            room: Arc::new(Mutex::new(ServerRoom::new(motd))),
             repo_event_sender,
         }
     }
 
     pub async fn run(&mut self, mut repository: SessionRepository) -> Result<(), anyhow::Error> {
-        self.init_whitelist();
-
         let room = self.room.clone();
+
+        info!("Spawning a thread to wait for incoming sessions");
         spawn(async move {
             repository.wait_for_sessions(room).await;
         });
 
+        info!("Spawning a thread to render UI to clients terminal handles");
         let room = self.room.clone();
         spawn(async move { tui::render(room).await });
 
         let config = Config {
-            inactivity_timeout: Some(std::time::Duration::from_secs(3600)),
-            auth_rejection_time: std::time::Duration::from_secs(3),
-            auth_rejection_time_initial: Some(std::time::Duration::from_secs(0)),
-            keys: vec![russh_keys::key::KeyPair::generate_ed25519().unwrap()],
+            inactivity_timeout: Some(Duration::from_secs(3600)),
+            auth_rejection_time: Duration::from_secs(3),
+            auth_rejection_time_initial: Some(Duration::from_secs(0)),
+            keys: self.server_keys.clone(),
             ..Default::default()
         };
 
-        self.run_on_address(Arc::new(config), ("0.0.0.0", 2222))
+        info!("Server is running on {} port!", self.port);
+        self.run_on_address(Arc::new(config), ("0.0.0.0", self.port))
             .await?;
+
         Ok(())
-    }
-
-    fn init_whitelist(&mut self) {
-        let raw_whitelist = utils::fs::read_lines(WHITELIST_FILEPATH)
-            .expect("Should have been able to read the whitelist file");
-
-        let whitelist = raw_whitelist
-            .iter()
-            .filter_map(|line| utils::ssh::split_ssh_key(line))
-            .filter_map(|(_, key, _)| russh_keys::parse_public_key_base64(&key).ok())
-            .collect::<Vec<PublicKey>>();
-
-        self.whitelist = Arc::new(Mutex::new(whitelist));
     }
 }
 

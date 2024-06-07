@@ -2,19 +2,24 @@
 name = "ssh-chat"
 version = "0.1.0"
 edition = "2021"
+authors = ["unrenamed <renkonazbka@gmail.com>"]
+description = "SSH Chat: Real-time communication over SSH"
+readme = "README.md"
+homepage = "https://github.com/unrenamed/ssh-chat"
+repository = "https://github.com/unrenamed/ssh-chat"
+keywords = ["ssh", "chat", "ssh-chat", "ssh-server"]
+categories = ["chats"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 futures = "0.3.30"
-russh = "0.43.0"
-russh-keys = "0.43.0"
+russh = { version = "0.43.0", features = ["openssl"] }
+russh-keys = { version = "0.43.0", features = ["openssl"] }
 tokio = { version = "1.36.0", features = ["io-std"] }
 anyhow = "1.0.79"
 async-trait = "0.1.77"
-env_logger = "0.11.1"
 log = "0.4.20"
-clap = { version = "3.2", features = ["derive"] }
 crossterm = "0.27.0"
 terminal-keycode = "1.1.1"
 rand = "0.8.5"
@@ -26,3 +31,6 @@ enum_dispatch = "0.3.13"
 circular-buffer = "0.1.7"
 governor = "0.6.3"
 nonzero_ext = "0.3.0"
+clap = { version = "4.5.4", features = ["derive"] }
+dirs = "5.0.1"
+log4rs = "1.3.0"

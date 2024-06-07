@@ -24,7 +24,7 @@ This project was greatly influenced by [shazow/ssh-chat](https://github.com/shaz
 
 ### Configuration
 
-- [ ] CLI for easy setup
+- [x] CLI for easy setup
 - [ ] CI/CD _(optional)_
 - [ ] Unit testing _(optional)_
 - [ ] Benches and performance improvements _(optional)_

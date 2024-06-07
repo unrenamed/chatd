@@ -93,7 +93,7 @@ impl SessionRepository {
         room: Arc<Mutex<ServerRoom>>,
         mut event_rx: Receiver<SessionEvent>,
     ) {
-        info!("Handling new session {}", id);
+        info!("Handling new session id={}", id);
 
         spawn(async move {
             loop {

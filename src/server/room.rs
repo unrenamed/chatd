@@ -3,7 +3,6 @@ use std::{collections::HashMap, sync::Arc};
 
 use governor::clock::{Clock, QuantaClock, Reference};
 use governor::{Quota, RateLimiter};
-use log::info;
 use nonzero_ext::nonzero;
 use terminal_keycode::{Decoder, KeyCode};
 use tokio::sync::Mutex;
@@ -18,7 +17,6 @@ use super::{
     app::{self, MessageChannel},
     message::{self, Message},
     message_history::MessageHistory,
-    motd::Motd,
     state::UserState,
     terminal::TerminalHandle,
     user::User,
@@ -43,17 +41,17 @@ pub struct ServerRoom {
     apps: HashMap<UserName, app::App>,
     ratelims: HashMap<UserId, Arc<Mutex<RateLimit>>>,
     history: MessageHistory,
-    motd: Motd,
+    motd: String,
 }
 
 impl ServerRoom {
-    pub fn new() -> Self {
+    pub fn new(motd: &str) -> Self {
         Self {
             names: HashMap::new(),
             apps: HashMap::new(),
             ratelims: HashMap::new(),
             history: MessageHistory::new(),
-            motd: Default::default(),
+            motd: motd.to_string(),
         }
     }
 
@@ -62,7 +60,7 @@ impl ServerRoom {
     }
 
     pub fn motd(&self) -> &String {
-        &self.motd.get()
+        &self.motd
     }
 
     pub async fn join(
@@ -113,7 +111,6 @@ impl ServerRoom {
     pub async fn leave(&mut self, user_id: &UserId) {
         let name = self.try_find_name(user_id);
         if let None = name {
-            info!("No username found for {}", user_id);
             return;
         }
 
@@ -260,7 +257,8 @@ impl ServerRoom {
                             let now = QuantaClock::default().now();
                             let remaining_nanos = nu.earliest_possible().duration_since(now);
                             let remaining_duration = Duration::from_nanos(remaining_nanos.as_u64());
-                            let truncated_remaining_duration = Duration::new(remaining_duration.as_secs(), 0);
+                            let truncated_remaining_duration =
+                                Duration::new(remaining_duration.as_secs(), 0);
 
                             let body = format!(
                                 "rate limit exceeded. Message dropped. Next allowed in {}",

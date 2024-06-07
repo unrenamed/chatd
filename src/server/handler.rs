@@ -26,14 +26,14 @@ pub struct ThinHandler {
     fingerprint: String,
     repo_event_sender: Sender<SessionRepositoryEvent>,
     session_event_sender: Option<Sender<SessionEvent>>,
-    whitelist: Arc<Mutex<Vec<PublicKey>>>,
+    whitelist: Arc<Mutex<Option<Vec<PublicKey>>>>,
 }
 
 impl ThinHandler {
     pub fn new(
         id: usize,
         repo_event_sender: Sender<SessionRepositoryEvent>,
-        whitelist: Arc<Mutex<Vec<PublicKey>>>,
+        whitelist: Arc<Mutex<Option<Vec<PublicKey>>>>,
     ) -> ThinHandler {
         ThinHandler {
             id,
@@ -55,6 +55,8 @@ impl Handler for ThinHandler {
         channel: Channel<Msg>,
         session: &mut Session,
     ) -> Result<bool, Self::Error> {
+        info!("Starting a new session id={}", self.id);
+
         let id = self.id;
         let connect_username = self.connect_username.clone();
         let fingerprint = self.fingerprint.clone();
@@ -88,6 +90,8 @@ impl Handler for ThinHandler {
     }
 
     async fn channel_close(&mut self, _: ChannelId, _: &mut Session) -> Result<(), Self::Error> {
+        info!("Closing a session id={}", self.id);
+
         let sender = self
             .session_event_sender
             .clone()
@@ -107,10 +111,14 @@ impl Handler for ThinHandler {
         pk: &PublicKey,
     ) -> Result<Auth, Self::Error> {
         info!("Public key offered auth request for user {}", user);
+
         let whitelist = self.whitelist.lock().await;
-        if whitelist.iter().any(|key| key.eq(pk)) {
-            return Ok(Auth::Accept);
+        if whitelist.is_some() {
+            if whitelist.as_ref().unwrap().iter().any(|key| key.eq(pk)) {
+                return Ok(Auth::Accept);
+            }
         }
+
         Ok(Auth::Reject {
             proceed_with_methods: Some(MethodSet::PUBLICKEY | MethodSet::NONE),
         })
@@ -128,6 +136,13 @@ impl Handler for ThinHandler {
 
     async fn auth_none(&mut self, user: &str) -> Result<Auth, Self::Error> {
         info!("None auth request for user {}", user);
+
+        if self.whitelist.lock().await.is_some() {
+            return Ok(Auth::Reject {
+                proceed_with_methods: Some(MethodSet::PUBLICKEY),
+            });
+        }
+
         self.connect_username = String::from(user);
         self.fingerprint = format!("(no public key)");
         Ok(Auth::Accept)
@@ -187,7 +202,7 @@ impl Handler for ThinHandler {
 impl Drop for ThinHandler {
     fn drop(&mut self) {
         if let Some(sender) = &self.session_event_sender {
-            info!("Clean up from disconnected session {}", self.id);
+            info!("Clean up from disconnected session id={}", self.id);
             let sender = sender.clone();
             tokio::spawn(async move {
                 sender.send(SessionEvent::Disconnect).await.unwrap();
