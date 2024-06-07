@@ -1,6 +1,7 @@
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 
+use chrono::{DateTime, Utc};
 use governor::clock::{Clock, QuantaClock, Reference};
 use governor::{Quota, RateLimiter};
 use nonzero_ext::nonzero;
@@ -9,7 +10,6 @@ use tokio::sync::Mutex;
 
 use crate::server::command::{Command, CommandParseError};
 use crate::server::user;
-use crate::utils;
 
 use super::theme::Theme;
 use super::user::TimestampMode;
@@ -42,6 +42,7 @@ pub struct ServerRoom {
     ratelims: HashMap<UserId, Arc<Mutex<RateLimit>>>,
     history: MessageHistory,
     motd: String,
+    created_at: DateTime<Utc>,
 }
 
 impl ServerRoom {
@@ -52,6 +53,7 @@ impl ServerRoom {
             ratelims: HashMap::new(),
             history: MessageHistory::new(),
             motd: motd.to_string(),
+            created_at: Utc::now(),
         }
     }
 
@@ -68,6 +70,7 @@ impl ServerRoom {
         user_id: UserId,
         username: UserName,
         fingerpint: String,
+        is_op: bool,
         terminal: TerminalHandle,
         ssh_id: String,
     ) {
@@ -76,7 +79,7 @@ impl ServerRoom {
             false => username,
         };
 
-        let user = User::new(user_id, name.clone(), ssh_id, fingerpint);
+        let user = User::new(user_id, name.clone(), ssh_id, fingerpint, is_op);
 
         let app = app::App {
             user: user.clone(),
@@ -150,12 +153,19 @@ impl ServerRoom {
             Message::Public(ref m) => {
                 self.history.push(msg.clone());
                 for (_, app) in self.apps.iter() {
+                    if m.from.is_muted && app.user.id == m.from.id {
+                        app.send_user_is_muted_message().await.unwrap();
+                    }
+                    if m.from.is_muted {
+                        continue;
+                    }
                     if app.user.ignored.contains(&m.from.id) {
                         continue;
-                    } else if !app.user.focused.is_empty() && !app.user.focused.contains(&m.from.id)
-                    {
+                    }
+                    if !app.user.focused.is_empty() && !app.user.focused.contains(&m.from.id) {
                         continue;
-                    } else if let Err(_) = app.send_message(msg.clone()).await {
+                    }
+                    if let Err(_) = app.send_message(msg.clone()).await {
                         continue;
                     }
                 }
@@ -163,9 +173,16 @@ impl ServerRoom {
             Message::Emote(ref m) => {
                 self.history.push(msg.clone());
                 for (_, app) in self.apps.iter() {
+                    if m.from.is_muted && app.user.id == m.from.id {
+                        app.send_user_is_muted_message().await.unwrap();
+                    }
+                    if m.from.is_muted {
+                        continue;
+                    }
                     if app.user.ignored.contains(&m.from.id) {
                         continue;
-                    } else if let Err(_) = app.send_message(msg.clone()).await {
+                    }
+                    if let Err(_) = app.send_message(msg.clone()).await {
                         continue;
                     }
                 }
@@ -173,17 +190,31 @@ impl ServerRoom {
             Message::Announce(ref m) => {
                 self.history.push(msg.clone());
                 for (_, app) in self.apps.iter() {
+                    if m.from.is_muted && app.user.id == m.from.id {
+                        app.send_user_is_muted_message().await.unwrap();
+                    }
+                    if m.from.is_muted {
+                        continue;
+                    }
                     if app.user.quiet {
                         continue;
-                    } else if app.user.ignored.contains(&m.from.id) {
+                    }
+                    if app.user.ignored.contains(&m.from.id) {
                         continue;
-                    } else if let Err(_) = app.send_message(msg.clone()).await {
+                    }
+                    if let Err(_) = app.send_message(msg.clone()).await {
                         continue;
                     }
                 }
             }
             Message::Private(ref m) => {
                 let from = self.find_app(&m.from.username);
+
+                if m.from.is_muted {
+                    from.send_user_is_muted_message().await.unwrap();
+                    return;
+                }
+
                 from.send_message(msg.clone()).await.unwrap();
 
                 let to = self.find_app(&m.to.username);
@@ -338,7 +369,8 @@ impl ServerRoom {
             }
         }
 
-        match cmd.unwrap() {
+        let cmd = cmd.unwrap();
+        match cmd {
             Command::Exit => {
                 let app = self.find_app(username);
                 app.terminal.lock().await.close();
@@ -550,14 +582,7 @@ impl ServerRoom {
                 let app = self.find_app(username);
                 let user = app.user.clone();
 
-                let message = message::System::new(
-                    user,
-                    format!(
-                        "Available commands: {}{}",
-                        utils::NEWLINE,
-                        Command::to_string()
-                    ),
-                );
+                let message = message::System::new(user.clone(), Command::to_string(user.is_op));
                 self.send_message(message.into()).await;
             }
             Command::Quiet => {
@@ -766,6 +791,87 @@ impl ServerRoom {
 
                 let message = message::System::new(user, message_text);
                 self.send_message(message.into()).await;
+            }
+            Command::Version => {
+                let message = message::System::new(user, format!("{}", env!("CARGO_PKG_VERSION")));
+                self.send_message(message.into()).await;
+            }
+            Command::Uptime => {
+                let now = Utc::now();
+                let since_created = now.signed_duration_since(self.created_at).num_seconds() as u64;
+                let uptime = humantime::format_duration(Duration::from_secs(since_created));
+                let message = message::System::new(user, uptime.to_string());
+                self.send_message(message.into()).await;
+            }
+            Command::Mute(target_username) => 'label: {
+                if !user.is_op {
+                    let message = message::Error::new(user, "must be an operator".to_string());
+                    self.send_message(message.into()).await;
+                    break 'label;
+                }
+
+                match self.try_find_app_mut(&target_username).map(|a| &mut a.user) {
+                    None => {
+                        let message = message::Error::new(user, "user not found".to_string());
+                        self.send_message(message.into()).await;
+                        break 'label;
+                    }
+                    Some(target) if target.id == user.id => {
+                        let message =
+                            message::Error::new(user, "you can't mute yourself".to_string());
+                        self.send_message(message.into()).await;
+                        break 'label;
+                    }
+                    Some(target) => {
+                        target.switch_mute_mode();
+                        let target = target.clone();
+                        let message = message::System::new(
+                            user,
+                            format!(
+                                "{}: {}, id = {}",
+                                match target.is_muted {
+                                    true => "Muted",
+                                    false => "Unmuted",
+                                },
+                                target.username,
+                                target.id
+                            ),
+                        );
+                        self.send_message(message.into()).await;
+                    }
+                }
+            }
+            Command::Kick(_) => 'label: {
+                if !user.is_op {
+                    let message = message::Error::new(user, "must be an operator".to_string());
+                    self.send_message(message.into()).await;
+                    break 'label;
+                }
+                todo!()
+            }
+            Command::Ban(_) => 'label: {
+                if !user.is_op {
+                    let message = message::Error::new(user, "must be an operator".to_string());
+                    self.send_message(message.into()).await;
+                    break 'label;
+                }
+                todo!()
+            }
+            Command::Banned => 'label: {
+                if !user.is_op {
+                    let message = message::Error::new(user, "must be an operator".to_string());
+                    self.send_message(message.into()).await;
+                    break 'label;
+                }
+                todo!()
+            }
+            Command::Motd(_) => 'label: {
+                if !user.is_op {
+                    let message = message::Error::new(user, "must be an operator".to_string());
+                    self.send_message(message.into()).await;
+                    break 'label;
+                }
+                todo!()
             }
         }
 

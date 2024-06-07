@@ -27,6 +27,8 @@ pub struct ThinHandler {
     repo_event_sender: Sender<SessionRepositoryEvent>,
     session_event_sender: Option<Sender<SessionEvent>>,
     whitelist: Arc<Mutex<Option<Vec<PublicKey>>>>,
+    oplist: Arc<Mutex<Option<Vec<PublicKey>>>>,
+    public_key: Option<PublicKey>,
 }
 
 impl ThinHandler {
@@ -34,6 +36,7 @@ impl ThinHandler {
         id: usize,
         repo_event_sender: Sender<SessionRepositoryEvent>,
         whitelist: Arc<Mutex<Option<Vec<PublicKey>>>>,
+        oplist: Arc<Mutex<Option<Vec<PublicKey>>>>,
     ) -> ThinHandler {
         ThinHandler {
             id,
@@ -42,6 +45,8 @@ impl ThinHandler {
             repo_event_sender,
             session_event_sender: None,
             whitelist,
+            oplist,
+            public_key: None,
         }
     }
 }
@@ -72,6 +77,18 @@ impl Handler for ThinHandler {
         let (session_event_tx, session_event_rx) = tokio::sync::mpsc::channel(100);
         self.session_event_sender = Some(session_event_tx);
 
+        let oplist = self.oplist.lock().await;
+        let mut is_op = false;
+        if oplist.is_some() && self.public_key.is_some() {
+            let pk = self.public_key.as_ref().unwrap();
+            is_op = oplist
+                .as_ref()
+                .unwrap()
+                .iter()
+                .find(|key| (*key).eq(pk))
+                .is_some();
+        }
+
         spawn(async move {
             sender
                 .send(SessionRepositoryEvent::NewSession(
@@ -79,6 +96,7 @@ impl Handler for ThinHandler {
                     ssh_id,
                     connect_username,
                     fingerprint,
+                    is_op,
                     terminal_handle,
                     session_event_rx,
                 ))
@@ -116,6 +134,7 @@ impl Handler for ThinHandler {
         );
         self.connect_username = String::from(user);
         self.fingerprint = format!("SHA256:{}", pk.fingerprint());
+        self.public_key = Some(pk.clone());
         Ok(Auth::Accept)
     }
 
@@ -130,6 +149,7 @@ impl Handler for ThinHandler {
 
         self.connect_username = String::from(user);
         self.fingerprint = format!("(no public key)");
+        self.public_key = None;
         Ok(Auth::Accept)
     }
 

@@ -74,27 +74,65 @@ pub enum Command {
     #[strum(props(Cmd = "/themes", Help = "List supported color themes"))]
     Themes,
 
-    #[strum(props(Cmd = "/slap", Args = "[user]", Help = "Show who is the boss here"))]
-    Slap(Option<String>),
-
-    #[strum(props(
-        Cmd = "/shrug",
-        Help = "Express either doubt or just deep indifference"
-    ))]
-    Shrug,
-
     #[strum(props(Cmd = "/quiet", Help = "Silence room announcements"))]
     Quiet,
 
+    /// Operator commands
+
     #[strum(props(
-        Cmd = "/me",
-        Args = "[action]",
-        Help = "Show an action or visible emotion of yours. E.g. '/me looks upset'"
+        Cmd = "/mute",
+        Args = "<user>",
+        Help = "Toggle muting user, preventing messages from broadcasting",
+        Op = "true"
     ))]
+    Mute(String),
+
+    #[strum(props(
+        Cmd = "/kick",
+        Args = "<user>",
+        Help = "Kick user from the server",
+        Op = "true"
+    ))]
+    Kick(String),
+
+    #[strum(props(
+        Cmd = "/ban",
+        Args = "<user>",
+        Help = "Ban user from the server",
+        Op = "true"
+    ))]
+    Ban(String),
+
+    #[strum(props(Cmd = "/banned", Help = "List the current ban conditions", Op = "true"))]
+    Banned,
+
+    #[strum(props(
+        Cmd = "/motd",
+        Args = "[message]",
+        Help = "Set a new message of the day, or print the motd if no message",
+        Op = "true"
+    ))]
+    Motd(Option<String>),
+
+    /// Secret commands (just hidden or easter eggs)
+
+    #[strum(props(Cmd = "/me", Args = "[action]"))]
     Me(Option<String>),
 
-    #[strum(props(Cmd = "/help", Help = "Show this help message"))]
+    #[strum(props(Cmd = "/slap", Args = "[user]"))]
+    Slap(Option<String>),
+
+    #[strum(props(Cmd = "/shrug",))]
+    Shrug,
+
+    #[strum(props(Cmd = "/help"))]
     Help,
+
+    #[strum(props(Cmd = "/version"))]
+    Version,
+
+    #[strum(props(Cmd = "/uptime"))]
+    Uptime,
 }
 
 #[derive(Debug, PartialEq)]
@@ -229,20 +267,38 @@ impl Command {
                 None => unreachable!(), // splitn returns [""] for an empty input
             },
             b"/help" => Ok(Command::Help),
+            b"/version" => Ok(Command::Version),
+            b"/uptime" => Ok(Command::Uptime),
+            b"/mute" => match args.splitn(2, ' ').nth(0) {
+                Some(user) if user.is_empty() => {
+                    Err(CommandParseError::ArgumentExpected(format!("user name")))
+                }
+                Some(user) => Ok(Command::Mute(user.to_string())),
+                None => unreachable!(), // splitn returns [""] for an empty input
+            },
+            b"/kick" => Ok(Command::Kick(String::new())),
+            b"/ban" => Ok(Command::Ban(String::new())),
+            b"/banned" => Ok(Command::Banned),
+            b"/motd" => Ok(Command::Motd(Some(String::new()))),
             _ => Err(CommandParseError::UnknownCommand),
         }
     }
 
-    pub fn to_string() -> String {
-        let mut result = String::new();
-        for (idx, cmd) in Command::iter().enumerate() {
+    pub fn to_string(show_op: bool) -> String {
+        let mut result = format!("Available commands: {}", utils::NEWLINE);
+
+        let user_commands: Vec<Command> = Command::get_commands_to_display()
+            .filter(|c| c.get_str("Op").unwrap_or_default() != "true")
+            .collect();
+
+        for (idx, cmd) in user_commands.iter().enumerate() {
             write!(
                 result,
                 "{:<10} {:<20} {}{}",
                 cmd.get_str("Cmd").unwrap_or_default(),
                 cmd.get_str("Args").unwrap_or_default(),
                 cmd.get_str("Help").unwrap_or_default(),
-                if idx == Command::COUNT - 1 {
+                if idx == user_commands.len() - 1 {
                     ""
                 } else {
                     utils::NEWLINE
@@ -250,7 +306,43 @@ impl Command {
             )
             .unwrap();
         }
+
+        if show_op {
+            let op_commands: Vec<Command> = Command::get_commands_to_display()
+                .filter(|c| c.get_str("Op").unwrap_or_default() == "true")
+                .collect();
+
+            write!(
+                result,
+                "{}{}Operator commands: {}",
+                utils::NEWLINE,
+                utils::NEWLINE,
+                utils::NEWLINE
+            )
+            .unwrap();
+
+            for (idx, cmd) in op_commands.iter().enumerate() {
+                write!(
+                    result,
+                    "{:<10} {:<20} {}{}",
+                    cmd.get_str("Cmd").unwrap_or_default(),
+                    cmd.get_str("Args").unwrap_or_default(),
+                    cmd.get_str("Help").unwrap_or_default(),
+                    if idx == op_commands.len() - 1 {
+                        ""
+                    } else {
+                        utils::NEWLINE
+                    }
+                )
+                .unwrap();
+            }
+        }
+
         result
+    }
+
+    fn get_commands_to_display() -> impl Iterator<Item = Command> {
+        Command::iter().filter(|c| !c.get_str("Help").unwrap_or_default().is_empty())
     }
 }
 

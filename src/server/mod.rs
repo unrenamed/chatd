@@ -33,6 +33,7 @@ pub struct AppServer {
     id_increment: usize,
     port: u16,
     server_keys: Vec<KeyPair>,
+    oplist: Arc<Mutex<Option<Vec<PublicKey>>>>,
     whitelist: Arc<Mutex<Option<Vec<PublicKey>>>>,
     room: Arc<Mutex<ServerRoom>>,
     repo_event_sender: Sender<SessionRepositoryEvent>,
@@ -42,6 +43,7 @@ impl AppServer {
     pub fn new(
         port: u16,
         server_keys: &[KeyPair],
+        oplist: Option<Vec<PublicKey>>,
         whitelist: Option<Vec<PublicKey>>,
         motd: &str,
         repo_event_sender: Sender<SessionRepositoryEvent>,
@@ -50,6 +52,7 @@ impl AppServer {
             port,
             id_increment: 0,
             server_keys: server_keys.to_vec(),
+            oplist: Arc::new(Mutex::new(oplist.map(|w| w.to_vec()))),
             whitelist: Arc::new(Mutex::new(whitelist.map(|w| w.to_vec()))),
             room: Arc::new(Mutex::new(ServerRoom::new(motd))),
             repo_event_sender,
@@ -95,6 +98,7 @@ impl Server for AppServer {
             self.id_increment,
             self.repo_event_sender.clone(),
             self.whitelist.clone(),
+            self.oplist.clone(),
         )
     }
 }

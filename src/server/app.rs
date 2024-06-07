@@ -10,7 +10,7 @@ use crate::server::message::MessageFormatter;
 use crate::server::terminal::TerminalHandle;
 use crate::utils;
 
-use super::message::Message;
+use super::message::{self, Message};
 use super::{state::UserState, user::User};
 
 type Terminal = Arc<Mutex<TerminalHandle>>;
@@ -50,6 +50,14 @@ pub struct App {
 impl App {
     pub async fn send_message(&self, msg: Message) -> Result<(), mpsc::error::SendError<Message>> {
         self.channel.send(msg).await
+    }
+
+    pub async fn send_user_is_muted_message(&self) -> Result<(), mpsc::error::SendError<Message>> {
+        let msg = message::Error::new(
+            self.user.clone(),
+            "You are muted and cannot send messages.".to_string(),
+        );
+        self.send_message(msg.into()).await
     }
 
     pub async fn render_motd(&mut self, motd: &str) -> Result<(), anyhow::Error> {

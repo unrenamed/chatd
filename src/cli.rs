@@ -11,6 +11,10 @@ pub struct Cli {
     #[arg(short = 'i', long, value_name = "KEY")]
     pub identity: Option<String>,
 
+    /// Optional file of public keys who are operators
+    #[arg(long, value_name = "FILE")]
+    pub oplist: Option<String>,
+
     /// Optional file of public keys who are allowed to connect
     #[arg(long, value_name = "FILE")]
     pub whitelist: Option<String>,

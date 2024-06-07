@@ -58,27 +58,41 @@ pub struct User {
     pub reply_to: Option<usize>,
     pub theme: UserTheme,
     pub quiet: bool,
+    pub is_op: bool,
+    pub is_muted: bool,
     pub timestamp_mode: TimestampMode,
     pub ignored: BTreeSet<usize>,
     pub focused: BTreeSet<usize>,
 }
 
 impl User {
-    pub fn new(id: usize, username: String, ssh_client: String, fingerprint: String) -> Self {
+    pub fn new(
+        id: usize,
+        username: String,
+        ssh_client: String,
+        fingerprint: String,
+        is_op: bool,
+    ) -> Self {
         Self {
             id,
             username,
             ssh_client,
             fingerprint,
+            is_op,
             joined_at: Utc::now(),
             reply_to: None,
             quiet: false,
+            is_muted: false,
             ..Default::default()
         }
     }
 
     pub fn switch_quiet_mode(&mut self) {
         self.quiet = !self.quiet;
+    }
+
+    pub fn switch_mute_mode(&mut self) {
+        self.is_muted = !self.is_muted;
     }
 
     pub fn set_timestamp_mode(&mut self, mode: TimestampMode) {

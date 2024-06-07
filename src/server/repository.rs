@@ -15,6 +15,7 @@ pub type SessionId = usize;
 pub type SessionSshId = String;
 pub type SessionConnectUsername = String;
 pub type SessionFingerprint = String;
+pub type SessionIsOp = bool;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SessionEvent {
@@ -28,6 +29,7 @@ pub enum SessionRepositoryEvent {
         SessionSshId,
         SessionConnectUsername,
         SessionFingerprint,
+        SessionIsOp,
         TerminalHandle,
         Receiver<SessionEvent>,
     ),
@@ -36,13 +38,13 @@ pub enum SessionRepositoryEvent {
 impl Debug for SessionRepositoryEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NewSession(arg0, arg1, arg2, arg3, _arg4, arg5) => f
+            Self::NewSession(arg0, arg1, arg2, arg3, arg4, _arg5, _arg6) => f
                 .debug_tuple("NewSession")
                 .field(arg0)
                 .field(arg1)
                 .field(arg2)
                 .field(arg3)
-                .field(arg5)
+                .field(arg4)
                 .finish(),
         }
     }
@@ -69,6 +71,7 @@ impl SessionRepository {
                         ssh_id,
                         connect_username,
                         fingerprint,
+                        is_op,
                         handle,
                         event_receiver,
                     ) => {
@@ -76,7 +79,7 @@ impl SessionRepository {
                         spawn(async move {
                             room.lock()
                                 .await
-                                .join(id, connect_username, fingerprint, handle, ssh_id)
+                                .join(id, connect_username, fingerprint, is_op, handle, ssh_id)
                                 .await;
 
                             Self::handle_session(id, room, event_receiver).await;

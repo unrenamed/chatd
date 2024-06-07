@@ -34,6 +34,19 @@ async fn main() {
     };
     let server_keys = vec![key_pair];
 
+    // Initiate server oplist
+    let oplist = match cli.oplist {
+        Some(path) => Some(
+            utils::fs::read_file_lines(&path)
+                .expect("Failed to read the oplist file")
+                .iter()
+                .filter_map(|line| utils::ssh::split_ssh_key(line))
+                .filter_map(|(_, key, _)| russh_keys::parse_public_key_base64(&key).ok())
+                .collect::<Vec<PublicKey>>(),
+        ),
+        None => None,
+    };
+
     // Initiate server whitelist
     let whitelist = match cli.whitelist {
         Some(path) => Some(
@@ -61,6 +74,7 @@ async fn main() {
     let mut server = server::AppServer::new(
         cli.port,
         &server_keys,
+        oplist.map(|o| o.to_vec()),
         whitelist.map(|w| w.to_vec()),
         &motd,
         tx,
