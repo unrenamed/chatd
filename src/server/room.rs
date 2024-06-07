@@ -126,6 +126,13 @@ impl ServerRoom {
         self.ratelims.remove(user_id);
     }
 
+    pub async fn cleanup(&mut self, user_id: &UserId) {
+        for (_, app) in &mut self.apps {
+            app.user.ignored.remove(user_id);
+            app.user.focused.remove(user_id);
+        }
+    }
+
     pub async fn send_message(&mut self, msg: Message) {
         match msg {
             Message::System(ref m) => {
@@ -542,6 +549,7 @@ impl ServerRoom {
             Command::Help => {
                 let app = self.find_app(username);
                 let user = app.user.clone();
+
                 let message = message::System::new(
                     user,
                     format!(

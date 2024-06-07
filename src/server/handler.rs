@@ -89,21 +89,6 @@ impl Handler for ThinHandler {
         Ok(true)
     }
 
-    async fn channel_close(&mut self, _: ChannelId, _: &mut Session) -> Result<(), Self::Error> {
-        info!("Closing a session id={}", self.id);
-
-        let sender = self
-            .session_event_sender
-            .clone()
-            .expect("Session event sender to be initialized during session creation");
-
-        tokio::spawn(async move {
-            sender.send(SessionEvent::Close).await.unwrap();
-        });
-
-        Ok(())
-    }
-
     #[allow(unused_variables)]
     async fn auth_publickey_offered(
         &mut self,

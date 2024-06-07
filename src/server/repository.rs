@@ -19,7 +19,6 @@ pub type SessionFingerprint = String;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SessionEvent {
     Data(Vec<u8>),
-    Close,
     Disconnect,
 }
 
@@ -105,9 +104,7 @@ impl SessionRepository {
                         }
                         SessionEvent::Disconnect => {
                             room.lock().await.leave(&id).await;
-                        }
-                        SessionEvent::Close => {
-                            room.lock().await.leave(&id).await;
+                            room.lock().await.cleanup(&id).await;
                         }
                     }
                 }
