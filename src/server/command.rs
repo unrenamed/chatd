@@ -97,7 +97,7 @@ pub enum Command {
 
     #[strum(props(
         Cmd = "/ban",
-        Args = "<user>",
+        Args = "<query>",
         Help = "Ban user from the server",
         Op = "true"
     ))]
@@ -287,7 +287,12 @@ impl Command {
                 Some(user) => Ok(Command::Kick(user.to_string())),
                 None => unreachable!(), // splitn returns [""] for an empty input
             },
-            b"/ban" => Ok(Command::Ban(String::new())),
+            b"/ban" => {
+                if args.is_empty() {
+                    return Err(CommandParseError::ArgumentExpected(format!("ban query")));
+                };
+                Ok(Command::Ban(args.to_string()))
+            }
             b"/banned" => Ok(Command::Banned),
             _ => Err(CommandParseError::UnknownCommand),
         }

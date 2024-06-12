@@ -4,16 +4,18 @@ use std::time::Duration;
 use handler::ThinHandler;
 use log::info;
 use repository::SessionRepositoryEvent;
-use room::ServerRoom;
 use russh::server::*;
-use russh_keys::key::{KeyPair, PublicKey};
+use russh_keys::key::KeyPair;
 use tokio::spawn;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 
 pub use repository::SessionRepository;
+pub use auth::Auth;
+pub use room::ServerRoom;
 
 mod app;
+mod auth;
 mod command;
 mod handler;
 mod input;
@@ -22,19 +24,20 @@ mod message;
 mod message_history;
 mod repository;
 mod room;
+mod set;
 mod state;
 mod terminal;
 mod theme;
 mod tui;
 mod user;
+mod ban;
 
 #[derive(Clone)]
 pub struct AppServer {
     id_increment: usize,
     port: u16,
     server_keys: Vec<KeyPair>,
-    oplist: Arc<Mutex<Option<Vec<PublicKey>>>>,
-    whitelist: Arc<Mutex<Option<Vec<PublicKey>>>>,
+    auth: Arc<Mutex<Auth>>,
     room: Arc<Mutex<ServerRoom>>,
     repo_event_sender: Sender<SessionRepositoryEvent>,
 }
@@ -42,19 +45,17 @@ pub struct AppServer {
 impl AppServer {
     pub fn new(
         port: u16,
+        auth: Arc<Mutex<Auth>>,
+        room: ServerRoom,
         server_keys: &[KeyPair],
-        oplist: Option<Vec<PublicKey>>,
-        whitelist: Option<Vec<PublicKey>>,
-        motd: &str,
         repo_event_sender: Sender<SessionRepositoryEvent>,
     ) -> Self {
         Self {
             port,
+            auth,
             id_increment: 0,
+            room: Arc::new(Mutex::new(room)),
             server_keys: server_keys.to_vec(),
-            oplist: Arc::new(Mutex::new(oplist.map(|w| w.to_vec()))),
-            whitelist: Arc::new(Mutex::new(whitelist.map(|w| w.to_vec()))),
-            room: Arc::new(Mutex::new(ServerRoom::new(motd))),
             repo_event_sender,
         }
     }
@@ -96,9 +97,8 @@ impl Server for AppServer {
         self.id_increment += 1;
         Self::Handler::new(
             self.id_increment,
+            self.auth.clone(),
             self.repo_event_sender.clone(),
-            self.whitelist.clone(),
-            self.oplist.clone(),
         )
     }
 }

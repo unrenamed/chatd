@@ -15,6 +15,7 @@ use tokio::spawn;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 
+use super::auth;
 use super::repository::SessionEvent;
 use super::repository::SessionRepositoryEvent;
 use super::terminal::TerminalHandle;
@@ -23,30 +24,25 @@ use super::terminal::TerminalHandle;
 pub struct ThinHandler {
     id: usize,
     connect_username: String,
-    fingerprint: String,
+    public_key: Option<PublicKey>,
+    auth: Arc<Mutex<auth::Auth>>,
     repo_event_sender: Sender<SessionRepositoryEvent>,
     session_event_sender: Option<Sender<SessionEvent>>,
-    whitelist: Arc<Mutex<Option<Vec<PublicKey>>>>,
-    oplist: Arc<Mutex<Option<Vec<PublicKey>>>>,
-    public_key: Option<PublicKey>,
 }
 
 impl ThinHandler {
     pub fn new(
         id: usize,
+        auth: Arc<Mutex<auth::Auth>>,
         repo_event_sender: Sender<SessionRepositoryEvent>,
-        whitelist: Arc<Mutex<Option<Vec<PublicKey>>>>,
-        oplist: Arc<Mutex<Option<Vec<PublicKey>>>>,
     ) -> ThinHandler {
         ThinHandler {
             id,
             connect_username: String::new(),
-            fingerprint: String::new(),
+            public_key: None,
+            auth,
             repo_event_sender,
             session_event_sender: None,
-            whitelist,
-            oplist,
-            public_key: None,
         }
     }
 }
@@ -64,8 +60,8 @@ impl Handler for ThinHandler {
 
         let id = self.id;
         let connect_username = self.connect_username.clone();
-        let fingerprint = self.fingerprint.clone();
         let ssh_id = String::from_utf8_lossy(session.remote_sshid()).to_string();
+        let key = self.public_key.clone();
 
         let terminal_handle = TerminalHandle {
             handle: session.handle(),
@@ -77,17 +73,11 @@ impl Handler for ThinHandler {
         let (session_event_tx, session_event_rx) = tokio::sync::mpsc::channel(100);
         self.session_event_sender = Some(session_event_tx);
 
-        let oplist = self.oplist.lock().await;
-        let mut is_op = false;
-        if oplist.is_some() && self.public_key.is_some() {
-            let pk = self.public_key.as_ref().unwrap();
-            is_op = oplist
-                .as_ref()
-                .unwrap()
-                .iter()
-                .find(|key| (*key).eq(pk))
-                .is_some();
-        }
+        let auth = self.auth.lock().await;
+        let is_op = match &self.public_key {
+            Some(key) => auth.is_op(key),
+            None => false,
+        };
 
         spawn(async move {
             sender
@@ -95,8 +85,8 @@ impl Handler for ThinHandler {
                     id,
                     ssh_id,
                     connect_username,
-                    fingerprint,
                     is_op,
+                    key,
                     terminal_handle,
                     session_event_rx,
                 ))
@@ -115,11 +105,9 @@ impl Handler for ThinHandler {
     ) -> Result<Auth, Self::Error> {
         info!("Public key offered auth request for user {}", user);
 
-        let whitelist = self.whitelist.lock().await;
-        if whitelist.is_some() {
-            if whitelist.as_ref().unwrap().iter().any(|key| key.eq(pk)) {
-                return Ok(Auth::Accept);
-            }
+        let mut auth = self.auth.lock().await;
+        if auth.is_trusted(pk) && !auth.check_bans(&user, &pk) {
+            return Ok(Auth::Accept);
         }
 
         Ok(Auth::Reject {
@@ -133,7 +121,6 @@ impl Handler for ThinHandler {
             user, pk
         );
         self.connect_username = String::from(user);
-        self.fingerprint = format!("SHA256:{}", pk.fingerprint());
         self.public_key = Some(pk.clone());
         Ok(Auth::Accept)
     }
@@ -141,14 +128,14 @@ impl Handler for ThinHandler {
     async fn auth_none(&mut self, user: &str) -> Result<Auth, Self::Error> {
         info!("None auth request for user {}", user);
 
-        if self.whitelist.lock().await.is_some() {
+        let auth = self.auth.lock().await;
+        if auth.has_operators() {
             return Ok(Auth::Reject {
                 proceed_with_methods: Some(MethodSet::PUBLICKEY),
             });
         }
 
         self.connect_username = String::from(user);
-        self.fingerprint = format!("(no public key)");
         self.public_key = None;
         Ok(Auth::Accept)
     }

@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 
@@ -5,6 +6,7 @@ use chrono::{DateTime, Utc};
 use governor::clock::{Clock, QuantaClock, Reference};
 use governor::{Quota, RateLimiter};
 use nonzero_ext::nonzero;
+use russh_keys::key::PublicKey;
 use terminal_keycode::{Decoder, KeyCode};
 use tokio::sync::Mutex;
 
@@ -12,6 +14,7 @@ use crate::server::command::{Command, CommandParseError};
 use crate::server::user;
 use crate::utils;
 
+use super::ban::BanQuery;
 use super::theme::Theme;
 use super::user::TimestampMode;
 use super::{
@@ -38,17 +41,19 @@ const MESSAGE_RATE_QUOTA: Quota = Quota::per_second(MESSAGE_MAX_BURST);
 
 #[derive(Clone)]
 pub struct ServerRoom {
-    pub names: HashMap<UserId, UserName>,
+    names: HashMap<UserId, UserName>,
     apps: HashMap<UserName, app::App>,
     ratelims: HashMap<UserId, Arc<Mutex<RateLimit>>>,
     history: MessageHistory,
     motd: String,
     created_at: DateTime<Utc>,
+    auth: Arc<Mutex<super::auth::Auth>>,
 }
 
 impl ServerRoom {
-    pub fn new(motd: &str) -> Self {
+    pub fn new(motd: &str, auth: Arc<Mutex<super::auth::Auth>>) -> Self {
         Self {
+            auth,
             names: HashMap::new(),
             apps: HashMap::new(),
             ratelims: HashMap::new(),
@@ -70,8 +75,8 @@ impl ServerRoom {
         &mut self,
         user_id: UserId,
         username: UserName,
-        fingerpint: String,
         is_op: bool,
+        key: Option<PublicKey>,
         terminal: TerminalHandle,
         ssh_id: String,
     ) {
@@ -80,7 +85,7 @@ impl ServerRoom {
             false => username,
         };
 
-        let user = User::new(user_id, name.clone(), ssh_id, fingerpint, is_op);
+        let user = User::new(user_id, name.clone(), ssh_id, key, is_op);
 
         let app = app::App {
             user: user.clone(),
@@ -891,13 +896,104 @@ impl ServerRoom {
                     }
                 }
             }
-            Command::Ban(_) => 'label: {
+            Command::Ban(query) => 'label: {
                 if !user.is_op {
                     let message = message::Error::new(user, "must be an operator".to_string());
                     self.send_message(message.into()).await;
                     break 'label;
                 }
-                todo!()
+
+                let query = query.parse::<BanQuery>();
+                if let Err(err) = query {
+                    let message = message::Error::new(user, err.to_string());
+                    self.send_message(message.into()).await;
+                    break 'label;
+                }
+
+                let mut messages: Vec<Message> = vec![];
+
+                match query.unwrap() {
+                    BanQuery::Single { name, duration } => {
+                        match self
+                            .try_find_app(&name)
+                            .filter(|app| app.user.public_key.is_some())
+                        {
+                            Some(app) => {
+                                self.auth.lock().await.ban_fingerprint(
+                                    &app.user.public_key.as_ref().unwrap().fingerprint(),
+                                    duration,
+                                );
+                                app.terminal.lock().await.close();
+                                let message = message::Announce::new(
+                                    user.clone(),
+                                    format!("banned {} from the server", app.user.username),
+                                );
+                                messages.push(message.into());
+                            }
+                            None => {
+                                let message =
+                                    message::Error::new(user, "user not found".to_string());
+                                self.send_message(message.into()).await;
+                                break 'label;
+                            }
+                        }
+                    }
+                    BanQuery::Multiple(items) => {
+                        for item in items {
+                            match item.attribute {
+                                super::ban::Attribute::Name(name) => {
+                                    self.auth.lock().await.ban_username(&name, item.duration);
+
+                                    for (_, app) in self.apps.iter_mut() {
+                                        if app.user.username.eq(&name) {
+                                            app.terminal.lock().await.close();
+                                            let message = message::Announce::new(
+                                                user.clone(),
+                                                format!("banned {} from the server", name),
+                                            );
+                                            messages.push(message.into());
+                                        }
+                                    }
+                                }
+                                super::ban::Attribute::Fingerprint(fingerprint) => {
+                                    self.auth
+                                        .lock()
+                                        .await
+                                        .ban_fingerprint(&fingerprint, item.duration);
+
+                                    for (_, app) in self.apps.iter_mut() {
+                                        if let Some(key) = &app.user.public_key {
+                                            if key.fingerprint().eq(&fingerprint) {
+                                                app.terminal.lock().await.close();
+                                                let message = message::Announce::new(
+                                                    user.clone(),
+                                                    format!(
+                                                        "banned {} from the server",
+                                                        app.user.username
+                                                    ),
+                                                );
+                                                messages.push(message.into());
+                                            }
+                                        }
+                                    }
+                                }
+                                super::ban::Attribute::Ip(_) => todo!(),
+                            }
+                        }
+                    }
+                }
+
+                messages.push(
+                    message::System::new(
+                        user,
+                        "Banning is complete. Offline users were silently banned.".to_string(),
+                    )
+                    .into(),
+                );
+
+                for message in messages {
+                    self.send_message(message).await;
+                }
             }
             Command::Banned => 'label: {
                 if !user.is_op {
@@ -905,7 +1001,21 @@ impl ServerRoom {
                     self.send_message(message.into()).await;
                     break 'label;
                 }
-                todo!()
+
+                let (names, fingerprints) = self.auth.lock().await.banned();
+                let mut buf = Vec::new();
+                write!(buf, "Banned: {}", utils::NEWLINE).unwrap();
+
+                for name in names {
+                    write!(buf, "{} \"name={}\"", utils::NEWLINE, name).unwrap();
+                }
+
+                for fingerprint in fingerprints {
+                    write!(buf, "{} \"fingerprint={}\"", utils::NEWLINE, fingerprint).unwrap();
+                }
+
+                let message = message::System::new(user, String::from_utf8(buf).unwrap());
+                self.send_message(message.into()).await;
             }
         }
 

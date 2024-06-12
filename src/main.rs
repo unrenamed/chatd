@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use clap::Parser;
 use cli::Cli;
 use log::LevelFilter;
 use russh_keys::key::{KeyPair, PublicKey};
+use tokio::sync::Mutex;
 
 mod cli;
 mod logger;
@@ -71,15 +74,10 @@ async fn main() {
     let (tx, rx) = tokio::sync::mpsc::channel(1000);
 
     // Initate server and session repository
-    let mut server = server::AppServer::new(
-        cli.port,
-        &server_keys,
-        oplist.map(|o| o.to_vec()),
-        whitelist.map(|w| w.to_vec()),
-        &motd,
-        tx,
-    );
+    let auth = Arc::new(Mutex::new(server::Auth::new(oplist, whitelist)));
+    let room = server::ServerRoom::new(&motd, auth.clone());
     let repository = server::SessionRepository::new(rx);
+    let mut server = server::AppServer::new(cli.port, auth.clone(), room, &server_keys, tx);
 
     // Run the server
     server.run(repository).await.expect("Failed running server");

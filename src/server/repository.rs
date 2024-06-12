@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use log::info;
+use russh_keys::key::PublicKey;
 use tokio::spawn;
 use tokio::sync::mpsc::Receiver;
 use tokio::sync::Mutex;
@@ -14,7 +15,6 @@ use super::terminal::TerminalHandle;
 pub type SessionId = usize;
 pub type SessionSshId = String;
 pub type SessionConnectUsername = String;
-pub type SessionFingerprint = String;
 pub type SessionIsOp = bool;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -28,8 +28,8 @@ pub enum SessionRepositoryEvent {
         SessionId,
         SessionSshId,
         SessionConnectUsername,
-        SessionFingerprint,
         SessionIsOp,
+        Option<PublicKey>,
         TerminalHandle,
         Receiver<SessionEvent>,
     ),
@@ -70,8 +70,8 @@ impl SessionRepository {
                         id,
                         ssh_id,
                         connect_username,
-                        fingerprint,
                         is_op,
+                        key,
                         handle,
                         event_receiver,
                     ) => {
@@ -79,7 +79,7 @@ impl SessionRepository {
                         spawn(async move {
                             room.lock()
                                 .await
-                                .join(id, connect_username, fingerprint, is_op, handle, ssh_id)
+                                .join(id, connect_username, is_op, key, handle, ssh_id)
                                 .await;
 
                             Self::handle_session(id, room, event_receiver).await;

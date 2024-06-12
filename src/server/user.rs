@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use rand::seq::SliceRandom;
 use rand::Rng;
+use russh_keys::key::PublicKey;
 use std::{collections::BTreeSet, fmt::Display, time::Duration};
 use strum::EnumString;
 
@@ -47,14 +48,14 @@ impl TimestampMode {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct User {
     pub id: usize,
     pub username: String,
     pub status: UserStatus,
     pub joined_at: DateTime<Utc>,
     pub ssh_client: String,
-    pub fingerprint: String,
+    pub public_key: Option<PublicKey>,
     pub reply_to: Option<usize>,
     pub theme: UserTheme,
     pub quiet: bool,
@@ -70,20 +71,24 @@ impl User {
         id: usize,
         username: String,
         ssh_client: String,
-        fingerprint: String,
+        key: Option<PublicKey>,
         is_op: bool,
     ) -> Self {
         Self {
             id,
             username,
             ssh_client,
-            fingerprint,
             is_op,
+            public_key: key,
             joined_at: Utc::now(),
             reply_to: None,
             quiet: false,
             is_muted: false,
-            ..Default::default()
+            status: Default::default(),
+            theme: Default::default(),
+            timestamp_mode: Default::default(),
+            ignored: BTreeSet::new(),
+            focused: BTreeSet::new(),
         }
     }
 
@@ -147,12 +152,17 @@ impl User {
 
 impl Display for User {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let fingerprint = match &self.public_key {
+            Some(key) => format!("SHA256: {}", key.fingerprint()),
+            None => "(no public key)".to_string(),
+        };
+
         write!(
             f,
             "name: {}{} > fingerprint: {}{} > client: {}{} > joined: {} ago",
             self.username,
             utils::NEWLINE,
-            self.fingerprint,
+            fingerprint,
             utils::NEWLINE,
             self.ssh_client,
             utils::NEWLINE,
