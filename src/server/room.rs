@@ -867,13 +867,29 @@ impl ServerRoom {
                 );
                 self.send_message(message.into()).await;
             }
-            Command::Kick(_) => 'label: {
+            Command::Kick(target_username) => 'label: {
                 if !user.is_op {
                     let message = message::Error::new(user, "must be an operator".to_string());
                     self.send_message(message.into()).await;
                     break 'label;
                 }
-                todo!()
+
+                match self.try_find_app_mut(&target_username) {
+                    None => {
+                        let message = message::Error::new(user, "user not found".to_string());
+                        self.send_message(message.into()).await;
+                        break 'label;
+                    }
+                    Some(app) => {
+                        app.terminal.lock().await.close();
+
+                        let message = message::Announce::new(
+                            user,
+                            format!("kicked {} from the server", target_username),
+                        );
+                        self.send_message(message.into()).await;
+                    }
+                }
             }
             Command::Ban(_) => 'label: {
                 if !user.is_op {

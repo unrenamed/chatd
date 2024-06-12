@@ -280,7 +280,13 @@ impl Command {
                 true => Command::Motd(None),
                 false => Command::Motd(Some(args.to_string())),
             }),
-            b"/kick" => Ok(Command::Kick(String::new())),
+            b"/kick" => match args.splitn(2, ' ').nth(0) {
+                Some(user) if user.is_empty() => {
+                    Err(CommandParseError::ArgumentExpected(format!("user name")))
+                }
+                Some(user) => Ok(Command::Kick(user.to_string())),
+                None => unreachable!(), // splitn returns [""] for an empty input
+            },
             b"/ban" => Ok(Command::Ban(String::new())),
             b"/banned" => Ok(Command::Banned),
             _ => Err(CommandParseError::UnknownCommand),
