@@ -10,6 +10,7 @@ use tokio::sync::Mutex;
 
 use crate::server::command::{Command, CommandParseError};
 use crate::server::user;
+use crate::utils;
 
 use super::theme::Theme;
 use super::user::TimestampMode;
@@ -841,6 +842,31 @@ impl ServerRoom {
                     }
                 }
             }
+            Command::Motd(text) => 'label: {
+                if text.is_none() {
+                    let message = message::System::new(user, self.motd.clone());
+                    self.send_message(message.into()).await;
+                    break 'label;
+                }
+
+                if !user.is_op {
+                    let message = message::Error::new(
+                        user,
+                        "must be an operator to modify the MOTD".to_string(),
+                    );
+                    self.send_message(message.into()).await;
+                    break 'label;
+                }
+
+                let motd = text.unwrap();
+                self.motd = motd.clone();
+
+                let message = message::Announce::new(
+                    user.clone(),
+                    format!("set new message of the day: {}-> {}", utils::NEWLINE, motd),
+                );
+                self.send_message(message.into()).await;
+            }
             Command::Kick(_) => 'label: {
                 if !user.is_op {
                     let message = message::Error::new(user, "must be an operator".to_string());
@@ -858,14 +884,6 @@ impl ServerRoom {
                 todo!()
             }
             Command::Banned => 'label: {
-                if !user.is_op {
-                    let message = message::Error::new(user, "must be an operator".to_string());
-                    self.send_message(message.into()).await;
-                    break 'label;
-                }
-                todo!()
-            }
-            Command::Motd(_) => 'label: {
                 if !user.is_op {
                     let message = message::Error::new(user, "must be an operator".to_string());
                     self.send_message(message.into()).await;

@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
 use enum_dispatch::enum_dispatch;
-
-use crate::utils::kmp::KMP;
+use regex::Regex;
 
 use super::user::User;
 
@@ -60,41 +59,12 @@ impl Public {
 impl MessageFormatter for Public {
     fn format(&self, user: &User) -> String {
         let pattern = format!("@{}", user.username);
-        let pattern_len = pattern.len();
-        let matches = KMP::new(&pattern).search(&self.body);
+        let re = Regex::new(&pattern).unwrap();
+        let replacement = user.theme.style_tagged_username(&pattern).to_string();
+        let message = re.replace_all(&self.body, replacement).to_string();
 
-        let mut body_parts = Vec::new();
-        let mut prev_index = 0;
-
-        for &index in &matches {
-            if index >= self.body.len() {
-                break;
-            }
-            if prev_index < index {
-                body_parts.push(
-                    user.theme
-                        .style_text(&self.body[prev_index..index])
-                        .to_string(),
-                );
-            }
-            if index + pattern_len <= self.body.len() {
-                body_parts.push(
-                    user.theme
-                        .style_tagged_username(&self.body[index..index + pattern_len])
-                        .to_string(),
-                );
-                prev_index = index + pattern_len;
-            }
-        }
-        if prev_index < self.body.len() {
-            body_parts.push(user.theme.style_text(&self.body[prev_index..]).to_string());
-        }
-
-        format!(
-            "{}: {}",
-            user.theme.style_username(&self.from.username),
-            body_parts.join("")
-        )
+        let username = user.theme.style_username(&self.from.username);
+        format!("{}: {}", username, message)
     }
 
     fn get_created_at(&self) -> DateTime<Utc> {

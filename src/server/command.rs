@@ -276,10 +276,13 @@ impl Command {
                 Some(user) => Ok(Command::Mute(user.to_string())),
                 None => unreachable!(), // splitn returns [""] for an empty input
             },
+            b"/motd" => Ok(match args.is_empty() {
+                true => Command::Motd(None),
+                false => Command::Motd(Some(args.to_string())),
+            }),
             b"/kick" => Ok(Command::Kick(String::new())),
             b"/ban" => Ok(Command::Ban(String::new())),
             b"/banned" => Ok(Command::Banned),
-            b"/motd" => Ok(Command::Motd(Some(String::new()))),
             _ => Err(CommandParseError::UnknownCommand),
         }
     }
