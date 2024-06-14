@@ -1,7 +1,7 @@
 use russh_keys::key::PublicKey;
 use std::time::Duration;
 
-use super::set::TimedHashSet;
+use crate::utils::TimedHashSet;
 
 #[derive(Clone)]
 pub struct Auth {

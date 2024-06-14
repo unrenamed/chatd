@@ -15,10 +15,11 @@ use tokio::spawn;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 
-use super::auth;
-use super::repository::SessionEvent;
-use super::repository::SessionRepositoryEvent;
-use super::terminal::TerminalHandle;
+use crate::server::auth;
+use crate::server::terminal::TerminalHandle;
+
+use super::SessionEvent;
+use super::SessionRepositoryEvent;
 
 /// Server handler. Each client will have their own handler.
 pub struct ThinHandler {

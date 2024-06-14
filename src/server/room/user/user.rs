@@ -3,50 +3,12 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 use russh_keys::key::PublicKey;
 use std::{collections::BTreeSet, fmt::Display, time::Duration};
-use strum::EnumString;
 
 use crate::utils;
 
+use super::status::UserStatus;
 use super::theme::UserTheme;
-
-#[derive(Clone, Debug)]
-pub enum UserStatus {
-    Active,
-    Away {
-        reason: String,
-        since: DateTime<Utc>,
-    },
-}
-
-impl Default for UserStatus {
-    fn default() -> Self {
-        Self::Active
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, EnumString)]
-#[strum(ascii_case_insensitive)]
-pub enum TimestampMode {
-    Time,
-    DateTime,
-    Off,
-}
-
-impl Default for TimestampMode {
-    fn default() -> Self {
-        Self::Off
-    }
-}
-
-impl TimestampMode {
-    pub fn format(&self) -> Option<&str> {
-        match self {
-            TimestampMode::Time => Some("%H:%M"),
-            TimestampMode::DateTime => Some("%Y-%m-%d %H:%M:%S"),
-            TimestampMode::Off => None,
-        }
-    }
-}
+use super::timestamp_mode::TimestampMode;
 
 #[derive(Clone, Debug)]
 pub struct User {

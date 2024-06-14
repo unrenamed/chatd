@@ -1,43 +1,22 @@
 use std::io::Write;
 use std::sync::Arc;
 
-use crossterm::cursor::{self};
-use crossterm::terminal::{self};
+use crossterm::cursor;
+use crossterm::terminal;
 use crossterm::{queue, style};
 use tokio::sync::{mpsc, Mutex};
 
-use crate::server::message::MessageFormatter;
+use crate::server::room::message;
+use crate::server::room::message::Message;
+use crate::server::room::message::MessageFormatter;
+use crate::server::room::user::User;
 use crate::server::terminal::TerminalHandle;
 use crate::utils;
 
-use super::message::{self, Message};
-use super::{state::UserState, user::User};
+use super::message_channel::MessageChannel;
+use super::state::UserState;
 
 type Terminal = Arc<Mutex<TerminalHandle>>;
-
-#[derive(Debug, Clone)]
-pub struct MessageChannel {
-    sender: mpsc::Sender<Message>,
-    receiver: Arc<Mutex<mpsc::Receiver<Message>>>,
-}
-
-impl MessageChannel {
-    pub fn new() -> Self {
-        let (sender, receiver) = mpsc::channel(100);
-        Self {
-            sender,
-            receiver: Arc::new(Mutex::new(receiver)),
-        }
-    }
-
-    pub async fn send(&self, msg: Message) -> Result<(), mpsc::error::SendError<Message>> {
-        self.sender.send(msg).await
-    }
-
-    pub async fn receive(&self) -> Result<Message, mpsc::error::TryRecvError> {
-        self.receiver.lock().await.try_recv()
-    }
-}
 
 #[derive(Clone)]
 pub struct App {
@@ -48,6 +27,15 @@ pub struct App {
 }
 
 impl App {
+    pub fn new(user: User, terminal: Terminal) -> Self {
+        Self {
+            user,
+            terminal,
+            state: UserState::new(),
+            channel: MessageChannel::new(),
+        }
+    }
+
     pub async fn send_message(&self, msg: Message) -> Result<(), mpsc::error::SendError<Message>> {
         self.channel.send(msg).await
     }
@@ -58,22 +46,6 @@ impl App {
             "You are muted and cannot send messages.".to_string(),
         );
         self.send_message(msg.into()).await
-    }
-
-    pub async fn render_motd(&mut self, motd: &str) -> Result<(), anyhow::Error> {
-        if self.state.render_motd {
-            queue!(
-                self.terminal.lock().await,
-                style::Print(utils::NEWLINE),
-                style::Print(format!("{}{}", motd, utils::NEWLINE)),
-                style::Print(utils::NEWLINE),
-                style::SetAttribute(style::Attribute::Reset)
-            )?;
-
-            self.state.render_motd = false;
-        }
-
-        Ok(())
     }
 
     pub async fn render(&mut self) -> Result<(), anyhow::Error> {

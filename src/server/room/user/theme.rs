@@ -1,22 +1,18 @@
 use crossterm::style::{Attribute, Color, StyledContent, Stylize};
 use fnv::FnvHasher;
-use std::{
-    fmt::Display,
-    hash::{Hash, Hasher},
-};
+use std::fmt::Display;
+use std::hash::{Hash, Hasher};
 use strum::{EnumIter, EnumString, IntoEnumIterator};
 
 #[derive(Debug, Clone)]
-pub enum ThemeColor {
+enum ThemeColor {
     // Include predefined crossterm colors
     Black,
     DarkGrey,
     Green,
     DarkGreen,
-    Yellow,
     DarkYellow,
     White,
-    Grey,
 
     // Custom colors
     FromString(String),
@@ -29,10 +25,8 @@ impl From<ThemeColor> for Color {
             ThemeColor::DarkGrey => Color::DarkGrey,
             ThemeColor::Green => Color::Green,
             ThemeColor::DarkGreen => Color::DarkGreen,
-            ThemeColor::Yellow => Color::Yellow,
             ThemeColor::DarkYellow => Color::DarkYellow,
             ThemeColor::White => Color::White,
-            ThemeColor::Grey => Color::Grey,
             ThemeColor::FromString(s) => {
                 let mut hasher = FnvHasher::default();
                 s.hash(&mut hasher);

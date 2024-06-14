@@ -1,4 +1,7 @@
 /target
 .vscode
+
+# For development env
 whitelist
 oplist
+keys/*

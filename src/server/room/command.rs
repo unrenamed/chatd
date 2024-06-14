@@ -1,10 +1,9 @@
+use super::user::{Theme, TimestampMode};
 use crate::utils;
 
 use fmt::Write;
 use std::{fmt, str::FromStr};
 use strum::{EnumCount, EnumIter, EnumProperty, IntoEnumIterator};
-
-use super::{theme::Theme, user::TimestampMode};
 
 #[derive(Debug, PartialEq, EnumProperty, EnumIter, EnumCount)]
 pub enum Command {

@@ -10,21 +10,16 @@ use russh_keys::key::PublicKey;
 use terminal_keycode::{Decoder, KeyCode};
 use tokio::sync::Mutex;
 
-use crate::server::command::{Command, CommandParseError};
-use crate::server::user;
-use crate::utils;
+use super::app::App;
+use super::command::{Command, CommandParseError};
+use super::message::{self, Message};
+use super::message_history::MessageHistory;
+use super::user::{Theme, TimestampMode, User, UserStatus};
 
-use super::ban::BanQuery;
-use super::theme::Theme;
-use super::user::TimestampMode;
-use super::{
-    app::{self, MessageChannel},
-    message::{self, Message},
-    message_history::MessageHistory,
-    state::UserState,
-    terminal::TerminalHandle,
-    user::User,
-};
+use crate::server::auth::{BanAttribute, BanQuery};
+use crate::server::terminal::TerminalHandle;
+use crate::server::Auth;
+use crate::utils;
 
 type UserId = usize;
 type UserName = String;
@@ -42,16 +37,16 @@ const MESSAGE_RATE_QUOTA: Quota = Quota::per_second(MESSAGE_MAX_BURST);
 #[derive(Clone)]
 pub struct ServerRoom {
     names: HashMap<UserId, UserName>,
-    apps: HashMap<UserName, app::App>,
+    apps: HashMap<UserName, App>,
     ratelims: HashMap<UserId, Arc<Mutex<RateLimit>>>,
     history: MessageHistory,
     motd: String,
     created_at: DateTime<Utc>,
-    auth: Arc<Mutex<super::auth::Auth>>,
+    auth: Arc<Mutex<Auth>>,
 }
 
 impl ServerRoom {
-    pub fn new(motd: &str, auth: Arc<Mutex<super::auth::Auth>>) -> Self {
+    pub fn new(motd: &str, auth: Arc<Mutex<Auth>>) -> Self {
         Self {
             auth,
             names: HashMap::new(),
@@ -63,12 +58,12 @@ impl ServerRoom {
         }
     }
 
-    pub fn apps_mut(&mut self) -> &mut HashMap<UserName, app::App> {
-        &mut self.apps
-    }
-
-    pub fn motd(&self) -> &String {
-        &self.motd
+    pub fn try_find_app_by_id(&mut self, user_id: UserId) -> Option<&mut App> {
+        let name = self.try_find_name(&user_id);
+        match name {
+            Some(username) => self.try_find_app_mut(&username.clone()),
+            None => None,
+        }
     }
 
     pub async fn join(
@@ -86,13 +81,7 @@ impl ServerRoom {
         };
 
         let user = User::new(user_id, name.clone(), ssh_id, key, is_op);
-
-        let app = app::App {
-            user: user.clone(),
-            state: UserState::new(),
-            terminal: Arc::new(Mutex::new(terminal)),
-            channel: MessageChannel::new(),
-        };
+        let app = App::new(user.clone(), Arc::new(Mutex::new(terminal)));
 
         self.apps.insert(name.clone(), app.clone());
         self.names.insert(user_id, name.clone());
@@ -101,11 +90,19 @@ impl ServerRoom {
             Arc::new(Mutex::new(RateLimit::direct(MESSAGE_RATE_QUOTA))),
         );
 
+        self.send_motd(&name).await;
         self.feed_history(&name).await;
 
         let message =
             message::Announce::new(user, format!("joined. (Connected: {})", self.apps.len()));
         self.send_message(message.into()).await;
+    }
+
+    pub async fn send_motd(&mut self, username: &UserName) {
+        let motd = self.motd.clone();
+        let app = self.find_app(username);
+        let message = message::System::new(app.user.clone(), format!("{}{}", motd, utils::NEWLINE));
+        let _ = app.send_message(message.into()).await;
     }
 
     pub async fn feed_history(&mut self, username: &UserName) {
@@ -392,7 +389,7 @@ impl ServerRoom {
             }
             Command::Back => {
                 let app = self.find_app_mut(username);
-                if let user::UserStatus::Away {
+                if let UserStatus::Away {
                     reason: _,
                     since: _,
                 } = &app.user.status
@@ -471,7 +468,7 @@ impl ServerRoom {
                         self.send_message(message.into()).await;
 
                         match status {
-                            user::UserStatus::Away { reason, since: _ } => {
+                            UserStatus::Away { reason, since: _ } => {
                                 let message = message::System::new(
                                     from.clone(),
                                     format!(
@@ -481,7 +478,7 @@ impl ServerRoom {
                                 );
                                 self.send_message(message.into()).await;
                             }
-                            user::UserStatus::Active => {}
+                            UserStatus::Active => {}
                         }
                     }
                 }
@@ -941,7 +938,7 @@ impl ServerRoom {
                     BanQuery::Multiple(items) => {
                         for item in items {
                             match item.attribute {
-                                super::ban::Attribute::Name(name) => {
+                                BanAttribute::Name(name) => {
                                     self.auth.lock().await.ban_username(&name, item.duration);
 
                                     for (_, app) in self.apps.iter_mut() {
@@ -955,7 +952,7 @@ impl ServerRoom {
                                         }
                                     }
                                 }
-                                super::ban::Attribute::Fingerprint(fingerprint) => {
+                                BanAttribute::Fingerprint(fingerprint) => {
                                     self.auth
                                         .lock()
                                         .await
@@ -977,7 +974,7 @@ impl ServerRoom {
                                         }
                                     }
                                 }
-                                super::ban::Attribute::Ip(_) => todo!(),
+                                BanAttribute::Ip(_) => todo!(),
                             }
                         }
                     }
@@ -1027,23 +1024,23 @@ impl ServerRoom {
         self.apps.contains_key(username)
     }
 
-    fn find_app(&self, username: &str) -> &app::App {
+    fn find_app(&self, username: &str) -> &App {
         self.apps
             .get(username)
-            .expect("User MUST have an app within a server room")
+            .expect(format!("User {username} MUST have an app within a server room").as_str())
     }
 
-    fn find_app_mut(&mut self, username: &str) -> &mut app::App {
+    fn find_app_mut(&mut self, username: &str) -> &mut App {
         self.apps
             .get_mut(username)
-            .expect("User MUST have an app within a server room")
+            .expect(format!("User {username} MUST have an app within a server room").as_str())
     }
 
-    fn try_find_app(&self, username: &str) -> Option<&app::App> {
+    fn try_find_app(&self, username: &str) -> Option<&App> {
         self.apps.get(username)
     }
 
-    fn try_find_app_mut(&mut self, username: &str) -> Option<&mut app::App> {
+    fn try_find_app_mut(&mut self, username: &str) -> Option<&mut App> {
         self.apps.get_mut(username)
     }
 

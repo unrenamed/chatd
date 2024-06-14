@@ -20,7 +20,7 @@ This project was greatly influenced by [shazow/ssh-chat](https://github.com/shaz
 
 - [x] Option to allow connections from authorized users only
 - [x] Messaging rate-limit to prevent spam
-- [ ] Special commands for operators (`/kick`, `/ban`, `/mute`, etc.)
+- [x] Special commands for operators (`/kick`, `/ban`, `/mute`, etc.)
 
 ### Configuration
 
