@@ -1,5 +1,4 @@
 use humantime;
-use log::info;
 use std::{str::FromStr, time::Duration};
 
 #[derive(Debug)]
@@ -10,8 +9,6 @@ impl FromStr for BanDuration {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let duration = humantime::parse_duration(s);
-        info!("{}", s);
-        info!("{:?}", duration);
         match duration {
             Ok(d) => Ok(BanDuration(d)),
             Err(_) => Err("invalid duration string"),
@@ -30,7 +27,6 @@ impl FromStr for Attribute {
     type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        info!("{}", s);
         if let Some((key, value)) = s.split_once('=') {
             match key {
                 "name" => Ok(Attribute::Name(value.to_string())),
@@ -68,7 +64,7 @@ impl FromStr for BanQuery {
         // Single ban command
         if !next_part.contains('=') {
             let name = next_part.to_string();
-            let duration_str = parts.next().ok_or("missing duration")?;
+            let duration_str = parts.nth(1).ok_or("missing duration")?;
             let duration = duration_str.parse::<BanDuration>()?;
             return Ok(BanQuery::Single {
                 name,
