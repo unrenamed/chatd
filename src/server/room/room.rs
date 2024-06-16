@@ -333,9 +333,10 @@ impl ServerRoom {
         }
     }
 
-    async fn handle_command(&mut self, username: &str) {
+    async fn handle_command(&mut self, username: &UserName) {
         let app = self.find_app_mut(username);
         let user = app.user.clone();
+        let user_id = user.id;
         let input_str = app.state.input.to_string();
 
         let cmd = Command::parse(&app.state.input.bytes());
@@ -1001,7 +1002,7 @@ impl ServerRoom {
 
                 let (names, fingerprints) = self.auth.lock().await.banned();
                 let mut buf = Vec::new();
-                write!(buf, "Banned: {}", utils::NEWLINE).unwrap();
+                write!(buf, "Banned:").unwrap();
 
                 for name in names {
                     write!(buf, "{} \"name={}\"", utils::NEWLINE, name).unwrap();
@@ -1016,7 +1017,9 @@ impl ServerRoom {
             }
         }
 
-        let app = self.find_app_mut(username);
+        // Reload the username in case a user changed it via commands
+        let username = self.names.get(&user_id).unwrap().clone();
+        let app = self.find_app_mut(&username);
         app.state.input.clear();
     }
 
