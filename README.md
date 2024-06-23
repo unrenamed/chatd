@@ -2,6 +2,8 @@
 
 🚧 Work in Progress! 🚧
 
+SSH chat server written in Rust 🦀 for real-time communication, providing encrypted messaging over SSH.
+
 ### Acknowledgements
 
 This project was greatly influenced by [shazow/ssh-chat](https://github.com/shazow/ssh-chat).
@@ -14,7 +16,9 @@ This project was greatly influenced by [shazow/ssh-chat](https://github.com/shaz
 - [x] Emacs-style key bindings
 - [x] Command history
 - [x] Configurable motd (message of the day)
+- [ ] Command autocomplete
 - [ ] Automatically detect and handle idle users
+- [ ] Load user config overrides from ENV
 
 ### Security and Control
 

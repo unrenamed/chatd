@@ -81,7 +81,9 @@ impl ServerRoom {
         };
 
         let user = User::new(user_id, name.clone(), ssh_id, key, is_op);
-        let app = App::new(user.clone(), Arc::new(Mutex::new(terminal)));
+        let mut app = App::new(user.clone(), terminal);
+
+        app.terminal.set_prompt(&app.terminal.get_prompt(&user));
 
         self.apps.insert(name.clone(), app.clone());
         self.names.insert(user_id, name.clone());
@@ -237,58 +239,71 @@ impl ServerRoom {
                 match keycode {
                     KeyCode::Backspace => {
                         let app = self.find_app_mut(&username);
-                        app.state.input.remove_before_cursor();
+                        app.terminal.input.remove_before_cursor();
+                        app.terminal.write_prompt().await.unwrap();
                     }
-                    KeyCode::CtrlA => {
+                    KeyCode::CtrlA | KeyCode::CtrlArrowLeft | KeyCode::Home => {
                         let app = self.find_app_mut(&username);
-                        app.state.input.move_cursor_start();
+                        app.terminal.input.move_cursor_start();
+                        app.terminal.write_prompt().await.unwrap();
                     }
-                    KeyCode::CtrlE => {
+                    KeyCode::CtrlE | KeyCode::CtrlArrowRight | KeyCode::End => {
                         let app = self.find_app_mut(&username);
-                        app.state.input.move_cursor_end();
+                        app.terminal.input.move_cursor_end();
+                        app.terminal.write_prompt().await.unwrap();
                     }
+                    KeyCode::CtrlD => todo!(),
                     KeyCode::CtrlW => {
                         let app = self.find_app_mut(&username);
-                        app.state.input.remove_last_word_before_cursor();
+                        app.terminal.input.remove_last_word_before_cursor();
+                        app.terminal.write_prompt().await.unwrap();
                     }
                     KeyCode::CtrlK => {
                         let app = self.find_app_mut(&username);
-                        app.state.input.remove_after_cursor();
+                        app.terminal.input.remove_after_cursor();
+                        app.terminal.write_prompt().await.unwrap();
                     }
                     KeyCode::CtrlU => {
                         let app = self.find_app_mut(&username);
-                        app.state.input.clear();
+                        app.terminal.clear_input().await.unwrap();
                     }
                     KeyCode::CtrlY => {
                         let app = self.find_app_mut(&username);
-                        app.state.input.restore();
+                        app.terminal.input.restore();
+                        app.terminal.write_prompt().await.unwrap();
                     }
                     KeyCode::ArrowLeft | KeyCode::CtrlB => {
                         let app = self.find_app_mut(&username);
-                        app.state.input.move_cursor_prev();
+                        app.terminal.input.move_cursor_prev();
+                        app.terminal.write_prompt().await.unwrap();
                     }
                     KeyCode::ArrowRight | KeyCode::CtrlF => {
                         let app = self.find_app_mut(&username);
-                        app.state.input.move_cursor_next();
+                        app.terminal.input.move_cursor_next();
+                        app.terminal.write_prompt().await.unwrap();
                     }
                     KeyCode::Char(_) | KeyCode::Space => {
                         let app = self.find_app_mut(&username);
-                        app.state
+                        app.terminal
                             .input
                             .insert_before_cursor(keycode.bytes().as_slice());
+                        app.terminal.write_prompt().await.unwrap();
                     }
                     KeyCode::ArrowUp => {
                         let app = self.find_app_mut(&username);
-                        app.state.input.set_history_prev();
+                        app.terminal.input.set_history_prev();
+                        app.terminal.write_prompt().await.unwrap();
                     }
                     KeyCode::ArrowDown => {
                         let app = self.find_app_mut(&username);
-                        app.state.input.set_history_next();
+                        app.terminal.input.set_history_next();
+                        app.terminal.write_prompt().await.unwrap();
                     }
+                    KeyCode::Tab => todo!(),
                     KeyCode::Enter => {
                         let (user, input) = {
                             let app = self.find_app(&username);
-                            (app.user.clone(), app.state.input.clone())
+                            (app.user.clone(), app.terminal.input.clone())
                         };
 
                         let ratelimit = self.ratelims.get(&user_id).unwrap();
@@ -336,40 +351,31 @@ impl ServerRoom {
     async fn handle_command(&mut self, username: &UserName) {
         let app = self.find_app_mut(username);
         let user = app.user.clone();
-        let user_id = user.id;
-        let input_str = app.state.input.to_string();
 
-        let cmd = Command::parse(&app.state.input.bytes());
+        let cmd = Command::parse(&app.terminal.input.bytes());
+        let input_str = app.terminal.input.to_string();
+        app.terminal.clear_input().await.unwrap();
 
         match cmd {
             Err(err) if err == CommandParseError::NotRecognizedAsCommand => {
                 let message = message::Public::new(user, input_str);
                 self.send_message(message.into()).await;
-
-                let app = self.find_app_mut(username);
-                app.state.input.clear();
-
                 return;
             }
             Err(err) => {
+                app.terminal.input.push_to_history();
+
                 let message = message::Command::new(user.clone(), input_str);
                 self.send_message(message.into()).await;
 
                 let message = message::Error::new(user, format!("{}", err));
                 self.send_message(message.into()).await;
 
-                let app = self.find_app_mut(username);
-                app.state.input.push_to_history();
-                app.state.input.clear();
-
                 return;
             }
             Ok(_) => {
                 let message = message::Command::new(user.clone(), input_str);
                 self.send_message(message.into()).await;
-
-                let app = self.find_app_mut(username);
-                app.state.input.push_to_history();
             }
         }
 
@@ -377,7 +383,7 @@ impl ServerRoom {
         match cmd {
             Command::Exit => {
                 let app = self.find_app(username);
-                app.terminal.lock().await.close();
+                app.terminal.exit().await;
                 return;
             }
             Command::Away(reason) => {
@@ -434,6 +440,7 @@ impl ServerRoom {
 
                 let app = self.find_app_mut(username);
                 app.user.set_new_name(new_name.clone());
+                app.terminal.set_prompt(&app.terminal.get_prompt(&app.user));
 
                 let app = app.clone();
                 self.apps.insert(new_name.clone(), app);
@@ -567,7 +574,7 @@ impl ServerRoom {
             Command::Shrug => {
                 let app = self.find_app(username);
                 let user = app.user.clone();
-                let message = message::Emote::new(user, "¯\\_(ツ)_/¯".to_string());
+                let message = message::Emote::new(user, "¯\\_(◕‿◕)_/¯".to_string());
                 self.send_message(message.into()).await;
             }
             Command::Me(action) => {
@@ -884,7 +891,7 @@ impl ServerRoom {
                         break 'label;
                     }
                     Some(app) => {
-                        app.terminal.lock().await.close();
+                        app.terminal.exit().await;
 
                         let message = message::Announce::new(
                             user,
@@ -921,7 +928,7 @@ impl ServerRoom {
                                     &app.user.public_key.as_ref().unwrap().fingerprint(),
                                     duration,
                                 );
-                                app.terminal.lock().await.close();
+                                app.terminal.exit().await;
                                 let message = message::Announce::new(
                                     user.clone(),
                                     format!("banned {} from the server", app.user.username),
@@ -944,7 +951,7 @@ impl ServerRoom {
 
                                     for (_, app) in self.apps.iter_mut() {
                                         if app.user.username.eq(&name) {
-                                            app.terminal.lock().await.close();
+                                            app.terminal.exit().await;
                                             let message = message::Announce::new(
                                                 user.clone(),
                                                 format!("banned {} from the server", name),
@@ -962,7 +969,7 @@ impl ServerRoom {
                                     for (_, app) in self.apps.iter_mut() {
                                         if let Some(key) = &app.user.public_key {
                                             if key.fingerprint().eq(&fingerprint) {
-                                                app.terminal.lock().await.close();
+                                                app.terminal.exit().await;
                                                 let message = message::Announce::new(
                                                     user.clone(),
                                                     format!(
@@ -1016,11 +1023,12 @@ impl ServerRoom {
                 self.send_message(message.into()).await;
             }
         }
+    }
 
-        // Reload the username in case a user changed it via commands
-        let username = self.names.get(&user_id).unwrap().clone();
+    pub fn handle_window_resize(&mut self, user_id: &UserId, (width, height): (u16, u16)) {
+        let username = self.try_find_name(user_id).unwrap().clone();
         let app = self.find_app_mut(&username);
-        app.state.input.clear();
+        app.terminal.set_size(width, height);
     }
 
     fn is_room_member(&self, username: &str) -> bool {

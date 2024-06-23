@@ -2,7 +2,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
 
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use russh_keys::key::PublicKey;
 use tokio::spawn;
 use tokio::sync::mpsc::Receiver;
@@ -21,6 +21,7 @@ type SessionIsOp = bool;
 pub enum SessionEvent {
     Data(Vec<u8>),
     Disconnect,
+    WindowResize(u16, u16),
 }
 
 pub enum SessionRepositoryEvent {
@@ -62,29 +63,26 @@ impl SessionRepository {
     }
 
     pub async fn wait_for_sessions(&mut self, room: Arc<Mutex<ServerRoom>>) {
-        loop {
-            let event = self.repo_event_receiver.recv().await;
-            if let Some(e) = event {
-                match e {
-                    SessionRepositoryEvent::NewSession(
-                        id,
-                        ssh_id,
-                        connect_username,
-                        is_op,
-                        key,
-                        handle,
-                        event_receiver,
-                    ) => {
-                        let room = room.clone();
-                        spawn(async move {
-                            room.lock()
-                                .await
-                                .join(id, connect_username, is_op, key, handle, ssh_id)
-                                .await;
+        while let Some(event) = self.repo_event_receiver.recv().await {
+            match event {
+                SessionRepositoryEvent::NewSession(
+                    id,
+                    ssh_id,
+                    connect_username,
+                    is_op,
+                    key,
+                    handle,
+                    event_receiver,
+                ) => {
+                    let room = room.clone();
+                    spawn(async move {
+                        room.lock()
+                            .await
+                            .join(id, connect_username, is_op, key, handle, ssh_id)
+                            .await;
 
-                            Self::handle_session(id, room, event_receiver).await;
-                        });
-                    }
+                        Self::handle_session(id, room, event_receiver).await;
+                    });
                 }
             }
         }
@@ -120,21 +118,20 @@ impl SessionRepository {
     ) {
         info!("Session events processing task for id={id} is started");
 
-        loop {
-            sleep(Duration::from_millis(1)).await;
-
-            while let Ok(event) = event_rx.try_recv() {
-                match event {
-                    SessionEvent::Data(data) => {
-                        room.lock().await.handle_input(&id, data.as_slice()).await;
-                    }
-                    SessionEvent::Disconnect => {
-                        room.lock().await.leave(&id).await;
-                        room.lock().await.cleanup(&id).await;
-                        let _ = exit_tx.send(());
-                        info!("Session events processing task for id={id} is finished");
-                        return;
-                    }
+        while let Some(event) = event_rx.recv().await {
+            match event {
+                SessionEvent::Data(data) => {
+                    room.lock().await.handle_input(&id, data.as_slice()).await;
+                }
+                SessionEvent::Disconnect => {
+                    room.lock().await.leave(&id).await;
+                    room.lock().await.cleanup(&id).await;
+                    let _ = exit_tx.send(());
+                    info!("Session events processing task for id={id} is finished");
+                    return;
+                }
+                SessionEvent::WindowResize(width, height) => {
+                    room.lock().await.handle_window_resize(&id, (width, height));
                 }
             }
         }
@@ -150,10 +147,10 @@ impl SessionRepository {
             }
             _ = async {
                 loop {
-                    sleep(Duration::from_millis(50)).await;
+                    sleep(Duration::from_millis(10)).await;
 
                     if let Some(app) = room.lock().await.try_find_app_by_id(id) {
-                        app.render().await.unwrap_or_else(|err| error!("{}", err));
+                        app.wait_for_messages().await;
                     }
                 }
             } => {

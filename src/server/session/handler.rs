@@ -10,6 +10,7 @@ use russh::server::Session;
 use russh::Channel;
 use russh::ChannelId;
 use russh::MethodSet;
+use russh::Pty;
 use russh_keys::key::PublicKey;
 use tokio::spawn;
 use tokio::sync::mpsc::Sender;
@@ -178,6 +179,62 @@ impl Handler for ThinHandler {
 
         tokio::spawn(async move {
             sender.send(SessionEvent::Data(data)).await.unwrap();
+        });
+
+        Ok(())
+    }
+
+    async fn pty_request(
+        &mut self,
+        _: ChannelId,
+        _: &str,
+        col_width: u32,
+        row_height: u32,
+        _: u32,
+        _: u32,
+        _: &[(Pty, u32)],
+        _: &mut Session,
+    ) -> Result<(), Self::Error> {
+        let sender = self
+            .session_event_sender
+            .clone()
+            .expect("Session event sender to be initialized during session creation");
+
+        tokio::spawn(async move {
+            sender
+                .send(SessionEvent::WindowResize(
+                    col_width as u16,
+                    row_height as u16,
+                ))
+                .await
+                .unwrap();
+        });
+
+        Ok(())
+    }
+
+    async fn window_change_request(
+        &mut self,
+        _: ChannelId,
+        col_width: u32,
+        row_height: u32,
+        _: u32,
+        _: u32,
+        _: &mut Session,
+    ) -> Result<(), Self::Error> {
+        let sender = self
+            .session_event_sender
+            .clone()
+            .expect("Session event sender to be initialized during session creation");
+
+        tokio::spawn(async move {
+            sender
+                .send(SessionEvent::WindowResize(
+                    col_width as u16,
+                    row_height as u16,
+                ))
+                .await
+                .unwrap();
         });
 
         Ok(())
