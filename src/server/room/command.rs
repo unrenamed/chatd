@@ -5,7 +5,7 @@ use fmt::Write;
 use std::{fmt, str::FromStr};
 use strum::{EnumCount, EnumIter, EnumProperty, IntoEnumIterator};
 
-#[derive(Debug, PartialEq, EnumProperty, EnumIter, EnumCount)]
+#[derive(Debug, Clone, PartialEq, EnumProperty, EnumIter, EnumCount)]
 pub enum Command {
     #[strum(props(Cmd = "/exit", Help = "Exit the chat application"))]
     Exit,
@@ -153,37 +153,40 @@ impl fmt::Display for CommandParseError {
     }
 }
 
-impl Command {
-    pub fn parse(bytes: &[u8]) -> Result<Command, CommandParseError> {
-        let (cmd, args) = split_at_first_space(bytes);
-        if !cmd.starts_with(b"/") {
-            return Err(CommandParseError::NotRecognizedAsCommand);
+impl FromStr for Command {
+    type Err = CommandParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (cmd, args) = if let Some((cmd, args)) = s.split_once(' ') {
+            (cmd, args.trim_start())
+        } else {
+            (s, "")
+        };
+
+        if !cmd.starts_with("/") {
+            return Err(Self::Err::NotRecognizedAsCommand);
         }
 
-        let args = std::str::from_utf8(args)
-            .expect("Command arguments to be a valid UTF-8 string")
-            .trim_start();
-
-        match cmd {
+        match cmd.as_bytes() {
             b"/exit" => Ok(Command::Exit),
             b"/away" => match args.is_empty() {
-                true => Err(CommandParseError::ArgumentExpected(format!("away reason"))),
+                true => Err(Self::Err::ArgumentExpected(format!("away reason"))),
                 false => Ok(Command::Away(args.to_string())),
             },
             b"/back" => Ok(Command::Back),
             b"/name" => match args.splitn(2, ' ').nth(0) {
                 Some(new_name) => Ok(Command::Name(new_name.to_string())),
-                None => Err(CommandParseError::ArgumentExpected(format!("new name"))),
+                None => Err(Self::Err::ArgumentExpected(format!("new name"))),
             },
             b"/msg" => {
                 let mut iter = args.splitn(2, ' ');
                 let user = iter.next();
                 if user.is_none() || user.unwrap().is_empty() {
-                    return Err(CommandParseError::ArgumentExpected(format!("user name")));
+                    return Err(Self::Err::ArgumentExpected(format!("user name")));
                 }
                 let body = iter.next();
                 if body.is_none() || body.unwrap().is_empty() {
-                    return Err(CommandParseError::ArgumentExpected(format!("message body")));
+                    return Err(Self::Err::ArgumentExpected(format!("message body")));
                 };
                 Ok(Command::Msg(
                     user.unwrap().to_string(),
@@ -192,14 +195,14 @@ impl Command {
             }
             b"/reply" => {
                 if args.is_empty() {
-                    return Err(CommandParseError::ArgumentExpected(format!("message body")));
+                    return Err(Self::Err::ArgumentExpected(format!("message body")));
                 };
                 Ok(Command::Reply(args.to_string()))
             }
             b"/users" => Ok(Command::Users),
             b"/whois" => match args.splitn(2, ' ').nth(0) {
                 Some(user) if user.is_empty() => {
-                    Err(CommandParseError::ArgumentExpected(format!("user name")))
+                    Err(Self::Err::ArgumentExpected(format!("user name")))
                 }
                 Some(user) => Ok(Command::Whois(user.to_string())),
                 None => unreachable!(), // splitn returns [""] for an empty input
@@ -216,21 +219,21 @@ impl Command {
                 false => Ok(Command::Me(Some(args.to_string()))),
             },
             b"/timestamp" => match args.splitn(2, ' ').nth(0) {
-                Some(mode) if mode.is_empty() => Err(CommandParseError::Custom(
+                Some(mode) if mode.is_empty() => Err(Self::Err::Custom(
                     "timestamp value must be one of: time, datetime, off".to_string(),
                 )),
                 Some(mode) => match mode {
                     "time" | "datetime" | "off" => {
                         Ok(Command::Timestamp(TimestampMode::from_str(mode).unwrap()))
                     }
-                    _ => Err(CommandParseError::Custom(
+                    _ => Err(Self::Err::Custom(
                         "timestamp value must be one of: time, datetime, off".to_string(),
                     )),
                 },
                 None => unreachable!(), // splitn returns [""] for an empty input
             },
             b"/theme" => match args.splitn(2, ' ').nth(0) {
-                Some(theme) if theme.is_empty() => Err(CommandParseError::Custom(format!(
+                Some(theme) if theme.is_empty() => Err(Self::Err::Custom(format!(
                     "theme value must be one of: {}",
                     Theme::all().join(", ")
                 ))),
@@ -239,7 +242,7 @@ impl Command {
                     if supported_themes.contains(&theme.to_string()) {
                         Ok(Command::Theme(Theme::from_str(theme).unwrap()))
                     } else {
-                        Err(CommandParseError::Custom(format!(
+                        Err(Self::Err::Custom(format!(
                             "theme value must be one of: {}",
                             Theme::all().join(", ")
                         )))
@@ -255,7 +258,7 @@ impl Command {
             },
             b"/unignore" => match args.splitn(2, ' ').nth(0) {
                 Some(user) if user.is_empty() => {
-                    Err(CommandParseError::ArgumentExpected(format!("user name")))
+                    Err(Self::Err::ArgumentExpected(format!("user name")))
                 }
                 Some(user) => Ok(Command::Unignore(user.to_string())),
                 None => unreachable!(), // splitn returns [""] for an empty input
@@ -270,7 +273,7 @@ impl Command {
             b"/uptime" => Ok(Command::Uptime),
             b"/mute" => match args.splitn(2, ' ').nth(0) {
                 Some(user) if user.is_empty() => {
-                    Err(CommandParseError::ArgumentExpected(format!("user name")))
+                    Err(Self::Err::ArgumentExpected(format!("user name")))
                 }
                 Some(user) => Ok(Command::Mute(user.to_string())),
                 None => unreachable!(), // splitn returns [""] for an empty input
@@ -281,22 +284,24 @@ impl Command {
             }),
             b"/kick" => match args.splitn(2, ' ').nth(0) {
                 Some(user) if user.is_empty() => {
-                    Err(CommandParseError::ArgumentExpected(format!("user name")))
+                    Err(Self::Err::ArgumentExpected(format!("user name")))
                 }
                 Some(user) => Ok(Command::Kick(user.to_string())),
                 None => unreachable!(), // splitn returns [""] for an empty input
             },
             b"/ban" => {
                 if args.is_empty() {
-                    return Err(CommandParseError::ArgumentExpected(format!("ban query")));
+                    return Err(Self::Err::ArgumentExpected(format!("ban query")));
                 };
                 Ok(Command::Ban(args.to_string()))
             }
             b"/banned" => Ok(Command::Banned),
-            _ => Err(CommandParseError::UnknownCommand),
+            _ => Err(Self::Err::UnknownCommand),
         }
     }
+}
 
+impl Command {
     pub fn to_string(show_op: bool) -> String {
         let mut result = format!("Available commands: {}", utils::NEWLINE);
 
@@ -356,18 +361,5 @@ impl Command {
 
     fn get_commands_to_display() -> impl Iterator<Item = Command> {
         Command::iter().filter(|c| !c.get_str("Help").unwrap_or_default().is_empty())
-    }
-}
-
-fn split_at_first_space(bytes: &[u8]) -> (&[u8], &[u8]) {
-    // Find the position of the first space
-    if let Some(pos) = bytes.iter().position(|&b| b == b' ') {
-        // Split the slice at the position of the first space
-        let (first, rest) = bytes.split_at(pos);
-        // Skip the space in the rest slice
-        (first, &rest[1..])
-    } else {
-        // If there's no space, return the original slice
-        (bytes, &[])
     }
 }

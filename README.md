@@ -33,12 +33,6 @@ This project was greatly influenced by [shazow/ssh-chat](https://github.com/shaz
 - [ ] Unit testing _(optional)_
 - [ ] Benches and performance improvements _(optional)_
 
-### Known Issues
-
-1. When the prompt text is long enough to wrap to the next line(s), the cursor may not behave as expected.
-
-2. When the prompt contains emoji or other Unicode characters, the cursor may not behave as expected.
-
 ### Quick start
 
 ```console

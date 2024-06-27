@@ -3,15 +3,13 @@ use crossterm::queue;
 use crossterm::style;
 use crossterm::terminal::{Clear, ClearType};
 use std::io::Write;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::server::room::user::User;
-use crate::server::terminal::TerminalHandle;
+use crate::server::room::User;
 use crate::utils;
 use crate::utils::display_width;
 
+use super::handle::TerminalHandle;
 use super::input::TerminalInput;
 
 #[derive(Clone)]
@@ -19,7 +17,7 @@ pub struct Terminal {
     pub input: TerminalInput,
     prompt: String,
     prompt_visual_len: u16,
-    handle: Arc<Mutex<TerminalHandle>>,
+    handle: TerminalHandle,
     term_width: u16,
     term_height: u16,
     cursor_x: u16,
@@ -32,7 +30,7 @@ pub struct Terminal {
 impl Terminal {
     pub fn new(handle: TerminalHandle) -> Self {
         Self {
-            handle: Arc::new(Mutex::new(handle)),
+            handle,
             prompt: String::new(),
             prompt_visual_len: 0,
             input: Default::default(),
@@ -62,56 +60,52 @@ impl Terminal {
         self.prompt_visual_len = display_width(&self.prompt) as u16;
     }
 
-    pub async fn clear_input(&mut self) -> Result<(), anyhow::Error> {
+    pub fn clear_input(&mut self) -> Result<(), anyhow::Error> {
         self.input.clear();
-        self.write_prompt().await?;
+        self.write_prompt()?;
         Ok(())
     }
 
-    pub async fn exit(&self) {
-        let handle = self.handle.lock().await;
-        handle.close();
+    pub fn exit(&self) {
+        self.handle.close();
     }
 
-    pub async fn write_prompt(&mut self) -> Result<(), anyhow::Error> {
-        self.queue_prompt_cleanup().await?;
-        self.queue_write_line(&self.prompt.to_string()).await?;
-        self.queue_write_line(&self.input.to_string()).await?;
-        self.queue_outbuff_write().await?;
-        self.queue_move_cursor().await?;
-        self.handle.lock().await.flush()?;
+    pub fn write_prompt(&mut self) -> Result<(), anyhow::Error> {
+        self.queue_prompt_cleanup()?;
+        self.queue_write_line(&self.prompt.to_string())?;
+        self.queue_write_line(&self.input.to_string())?;
+        self.queue_outbuff_write()?;
+        self.queue_move_cursor()?;
+        self.handle.flush()?;
         Ok(())
     }
 
-    pub async fn write_message(&mut self, msg: &str) -> Result<(), anyhow::Error> {
-        self.queue_prompt_cleanup().await?;
-        self.queue_write_with_crlf(msg).await?;
-        self.queue_write_line(&self.prompt.to_string()).await?;
-        self.queue_write_line(&self.input.to_string()).await?;
-        self.queue_outbuff_write().await?;
-        self.queue_move_cursor().await?;
-        self.handle.lock().await.flush()?;
+    pub fn write_message(&mut self, msg: &str) -> Result<(), anyhow::Error> {
+        self.queue_prompt_cleanup()?;
+        self.queue_write_with_crlf(msg)?;
+        self.queue_write_line(&self.prompt.to_string())?;
+        self.queue_write_line(&self.input.to_string())?;
+        self.queue_outbuff_write()?;
+        self.queue_move_cursor()?;
+        self.handle.flush()?;
         Ok(())
     }
 
-    async fn queue_prompt_cleanup(&mut self) -> Result<(), anyhow::Error> {
+    fn queue_prompt_cleanup(&mut self) -> Result<(), anyhow::Error> {
         if self.cursor_y < self.prompt_y {
-            queue!(
-                self.handle.lock().await,
-                cursor::MoveDown(self.prompt_y - self.cursor_y)
-            )?;
+            queue!(self.handle, cursor::MoveDown(self.prompt_y - self.cursor_y))?;
         }
 
         self.prompt_x = 0;
         queue!(
-            self.handle.lock().await,
+            self.handle,
             cursor::MoveToColumn(0),
             Clear(ClearType::CurrentLine)
         )?;
 
         while self.prompt_y > 0 {
             queue!(
-                self.handle.lock().await,
+                self.handle,
                 cursor::MoveUp(1),
                 Clear(ClearType::CurrentLine)
             )?;
@@ -124,31 +118,31 @@ impl Terminal {
         Ok(())
     }
 
-    async fn queue_write_with_crlf(&mut self, line: &str) -> Result<(), anyhow::Error> {
+    fn queue_write_with_crlf(&mut self, line: &str) -> Result<(), anyhow::Error> {
         queue!(
-            self.handle.lock().await,
+            self.handle,
             style::Print(line),
             style::Print(utils::NEWLINE)
         )?;
         Ok(())
     }
 
-    async fn queue_write_line(&mut self, line: &str) -> Result<(), anyhow::Error> {
-        queue!(self.handle.lock().await, style::Print(line))?;
+    fn queue_write_line(&mut self, line: &str) -> Result<(), anyhow::Error> {
+        queue!(self.handle, style::Print(line))?;
         self.advance_cursor(utils::display_width(line) as u16);
         Ok(())
     }
 
-    async fn queue_outbuff_write(&mut self) -> Result<(), anyhow::Error> {
+    fn queue_outbuff_write(&mut self) -> Result<(), anyhow::Error> {
         queue!(
-            self.handle.lock().await,
+            self.handle,
             style::Print(String::from_utf8_lossy(&self.outbuff))
         )?;
         self.outbuff = vec![];
         Ok(())
     }
 
-    async fn queue_move_cursor(&mut self) -> Result<(), anyhow::Error> {
+    fn queue_move_cursor(&mut self) -> Result<(), anyhow::Error> {
         if self.term_width == 0 {
             return Ok(());
         }
@@ -190,16 +184,16 @@ impl Terminal {
         self.cursor_y = y;
 
         if up > 0 {
-            queue!(self.handle.lock().await, cursor::MoveUp(up))?;
+            queue!(self.handle, cursor::MoveUp(up))?;
         }
         if down > 0 {
-            queue!(self.handle.lock().await, cursor::MoveDown(down))?;
+            queue!(self.handle, cursor::MoveDown(down))?;
         }
         if right > 0 {
-            queue!(self.handle.lock().await, cursor::MoveRight(right))?;
+            queue!(self.handle, cursor::MoveRight(right))?;
         }
         if left > 0 {
-            queue!(self.handle.lock().await, cursor::MoveLeft(left))?;
+            queue!(self.handle, cursor::MoveLeft(left))?;
         }
 
         Ok(())
