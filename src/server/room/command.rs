@@ -302,64 +302,98 @@ impl FromStr for Command {
 }
 
 impl Command {
-    pub fn to_string(show_op: bool) -> String {
+    pub fn cmd(&self) -> &str {
+        self.get_str("Cmd").unwrap_or_default()
+    }
+
+    pub fn args(&self) -> &str {
+        self.get_str("Args").unwrap_or_default()
+    }
+
+    pub fn help(&self) -> &str {
+        self.get_str("Help").unwrap_or_default()
+    }
+
+    pub fn is_op(&self) -> bool {
+        self.get_str("Op").unwrap_or_default() == "true"
+    }
+
+    pub fn is_visible(&self) -> bool {
+        !self.help().is_empty()
+    }
+}
+
+pub struct CommandCollection {
+    commands: Vec<Command>,
+}
+
+impl CommandCollection {
+    pub fn new() -> Self {
+        let mut commands: Vec<Command> = Command::iter().collect();
+        commands.sort_by(|a, b| a.cmd().len().cmp(&b.cmd().len()));
+        Self { commands }
+    }
+
+    pub fn to_string(&self, show_op: bool) -> String {
         let mut result = format!("Available commands: {}", utils::NEWLINE);
 
-        let user_commands: Vec<Command> = Command::get_commands_to_display()
-            .filter(|c| c.get_str("Op").unwrap_or_default() != "true")
-            .collect();
-
-        for (idx, cmd) in user_commands.iter().enumerate() {
-            write!(
-                result,
-                "{:<10} {:<20} {}{}",
-                cmd.get_str("Cmd").unwrap_or_default(),
-                cmd.get_str("Args").unwrap_or_default(),
-                cmd.get_str("Help").unwrap_or_default(),
-                if idx == user_commands.len() - 1 {
-                    ""
-                } else {
-                    utils::NEWLINE
-                }
-            )
-            .unwrap();
-        }
+        let noop_count = self.noop_visible_iter().count();
+        let noop_commands = self.noop_visible_iter();
+        result.push_str(&self.format(noop_commands, noop_count));
 
         if show_op {
-            let op_commands: Vec<Command> = Command::get_commands_to_display()
-                .filter(|c| c.get_str("Op").unwrap_or_default() == "true")
-                .collect();
-
-            write!(
-                result,
+            result.push_str(&format!(
                 "{}{}Operator commands: {}",
                 utils::NEWLINE,
                 utils::NEWLINE,
                 utils::NEWLINE
-            )
-            .unwrap();
-
-            for (idx, cmd) in op_commands.iter().enumerate() {
-                write!(
-                    result,
-                    "{:<10} {:<20} {}{}",
-                    cmd.get_str("Cmd").unwrap_or_default(),
-                    cmd.get_str("Args").unwrap_or_default(),
-                    cmd.get_str("Help").unwrap_or_default(),
-                    if idx == op_commands.len() - 1 {
-                        ""
-                    } else {
-                        utils::NEWLINE
-                    }
-                )
-                .unwrap();
-            }
+            ));
+            let op_count = self.op_visible_iter().count();
+            let op_commands = self.op_visible_iter();
+            result.push_str(&self.format(op_commands, op_count));
         }
 
         result
     }
 
-    fn get_commands_to_display() -> impl Iterator<Item = Command> {
-        Command::iter().filter(|c| !c.get_str("Help").unwrap_or_default().is_empty())
+    pub fn from_prefix(&self, prefix: &str) -> Option<&Command> {
+        for cmd in &self.commands {
+            if cmd.cmd().starts_with(prefix) {
+                return Some(cmd);
+            }
+        }
+        None
+    }
+
+    fn format<'a, I>(&self, commands: I, count: usize) -> String
+    where
+        I: Iterator<Item = &'a Command> + 'a,
+    {
+        let mut result = String::new();
+        for (idx, cmd) in commands.enumerate() {
+            write!(
+                result,
+                "{:<10} {:<20} {}{}",
+                cmd.cmd(),
+                cmd.args(),
+                cmd.help(),
+                if idx == count - 1 { "" } else { utils::NEWLINE }
+            )
+            .unwrap();
+        }
+
+        result
+    }
+
+    fn all_visible_iter(&self) -> impl Iterator<Item = &Command> {
+        self.commands.iter().filter(|cmd| cmd.is_visible())
+    }
+
+    fn noop_visible_iter(&self) -> impl Iterator<Item = &Command> {
+        self.all_visible_iter().filter(|c| !c.is_op())
+    }
+
+    fn op_visible_iter(&self) -> impl Iterator<Item = &Command> {
+        self.all_visible_iter().filter(|c| c.is_op())
     }
 }

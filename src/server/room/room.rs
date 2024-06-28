@@ -1,4 +1,5 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use governor::Quota;
@@ -7,9 +8,11 @@ use russh_keys::key::PublicKey;
 use tokio::sync::{mpsc, Mutex};
 
 use super::member::RoomMember;
-use super::message::{self, Message};
+use super::message;
+use super::message::Message;
 use super::message_history::MessageHistory;
 use super::user::User;
+use super::CommandCollection;
 
 use crate::server::ratelimit::RateLimit;
 use crate::server::Auth;
@@ -26,6 +29,7 @@ pub struct ServerRoom {
     pub members: HashMap<UserName, RoomMember>,
     pub ratelims: HashMap<UserId, RateLimit>,
     pub history: MessageHistory,
+    pub commands: CommandCollection,
     pub motd: String,
     pub created_at: DateTime<Utc>,
     pub auth: Arc<Mutex<Auth>>,
@@ -39,6 +43,7 @@ impl ServerRoom {
             members: HashMap::new(),
             ratelims: HashMap::new(),
             history: MessageHistory::new(),
+            commands: CommandCollection::new(),
             motd: motd.to_string(),
             created_at: Utc::now(),
         }
@@ -207,6 +212,28 @@ impl ServerRoom {
         }
     }
 
+    pub fn find_name_by_prefix(&self, prefix: &str, skip: &str) -> Option<String> {
+        let mut members = vec![];
+        for member in self.members.values() {
+            if member.user.username.starts_with(prefix) {
+                members.push(member.clone());
+            }
+        }
+
+        // Sort in descending order (recently active first)
+        members.sort_by(|a, b| b.last_sent_at.cmp(&a.last_sent_at));
+
+        let names: Vec<&String> = members.iter().map(|m| &m.user.username).collect();
+        if names.is_empty() {
+            return None;
+        } else if names[0] != skip {
+            return Some(names[0].clone());
+        } else if names.len() > 1 {
+            return Some(names[1].clone());
+        }
+        None
+    }
+
     pub fn find_member(&self, username: &str) -> &RoomMember {
         self.members
             .get(username)
@@ -221,6 +248,14 @@ impl ServerRoom {
 
     pub fn is_room_member(&self, username: &str) -> bool {
         self.members.contains_key(username)
+    }
+
+    pub fn try_find_member_by_id(&mut self, user_id: UserId) -> Option<&RoomMember> {
+        let name = self.try_find_name(&user_id);
+        match name {
+            Some(username) => self.try_find_member(username),
+            None => None,
+        }
     }
 
     pub fn try_find_member(&self, username: &str) -> Option<&RoomMember> {

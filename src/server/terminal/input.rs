@@ -46,6 +46,11 @@ impl TerminalInput {
         self.state.cursor_char_pos
     }
 
+    // Get a cursor position in terms of bytes
+    pub fn cursor_byte_pos(&self) -> usize {
+        self.state.cursor_byte_pos
+    }
+
     // Get an input characters count
     pub fn char_count(&self) -> usize {
         self.state.char_count
@@ -104,6 +109,14 @@ impl TerminalInput {
         self.state.cursor_byte_pos = self.state.text.len();
     }
 
+    // Move cursor to the given byte position
+    pub fn move_cursor_to(&mut self, pos: usize) {
+        if pos <= self.bytes().len() {
+            self.state.cursor_byte_pos = pos;
+            self.calc_new_cursor_char_pos();
+        }
+    }
+
     // Insert text before cursor position and update cursor
     pub fn insert_before_cursor(&mut self, bytes: &[u8]) {
         let insert_text = &String::from_utf8_lossy(bytes);
@@ -112,13 +125,11 @@ impl TerminalInput {
             .insert_str(self.state.cursor_byte_pos, insert_text);
 
         let graphemes = self.state.text.graphemes(true).collect::<Vec<&str>>();
-        let old_cursor_byte_pos = self.state.cursor_byte_pos;
-        let new_cursor_char_pos = byte_to_char_pos(&graphemes, old_cursor_byte_pos) + 1;
-        let new_cursor_byte_pos = char_to_byte_pos(&graphemes, new_cursor_char_pos);
+        let new_cursor_byte_pos = self.state.cursor_byte_pos + bytes.len();
 
-        self.state.cursor_byte_pos = new_cursor_byte_pos;
-        self.state.cursor_char_pos = new_cursor_char_pos;
         self.state.char_count = graphemes.len();
+        self.state.cursor_byte_pos = new_cursor_byte_pos;
+        self.calc_new_cursor_char_pos();
         self.state.display_width = utils::display_width(&self.state.text);
     }
 
@@ -243,6 +254,12 @@ impl TerminalInput {
         let new_cursor_byte_pos = char_to_byte_pos(&graphemes, self.state.cursor_char_pos);
         self.state.cursor_byte_pos = new_cursor_byte_pos;
     }
+
+    fn calc_new_cursor_char_pos(&mut self) {
+        let graphemes: Vec<&str> = self.state.text.graphemes(true).collect();
+        let new_cursor_char_pos = byte_to_char_pos(&graphemes, self.state.cursor_byte_pos);
+        self.state.cursor_char_pos = new_cursor_char_pos;
+    }
 }
 
 fn char_to_byte_pos(graphemes: &Vec<&str>, char_pos: usize) -> usize {
@@ -252,14 +269,20 @@ fn char_to_byte_pos(graphemes: &Vec<&str>, char_pos: usize) -> usize {
 fn byte_to_char_pos(graphemes: &Vec<&str>, byte_pos: usize) -> usize {
     let mut byte_count = 0;
     let mut cursor_pos = 0;
+    let mut found = false;
 
     for (i, grapheme) in graphemes.iter().enumerate() {
         byte_count += grapheme.len();
         if byte_count > byte_pos {
             cursor_pos = i;
+            found = true;
             break;
         }
     }
 
-    cursor_pos
+    if found {
+        cursor_pos
+    } else {
+        graphemes.len()
+    }
 }

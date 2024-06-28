@@ -64,12 +64,7 @@ impl Handler for ThinHandler {
         let connect_username = self.connect_username.clone();
         let ssh_id = String::from_utf8_lossy(session.remote_sshid()).to_string();
         let key = self.public_key.clone();
-
-        let terminal_handle = TerminalHandle {
-            handle: session.handle(),
-            sink: Vec::new(),
-            channel_id: channel.id(),
-        };
+        let terminal_handle = TerminalHandle::new(channel.id(), session.handle());
 
         let sender = self.repo_event_sender.clone();
         let (session_event_tx, session_event_rx) = tokio::sync::mpsc::channel(100);

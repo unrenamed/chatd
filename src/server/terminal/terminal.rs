@@ -66,7 +66,7 @@ impl Terminal {
         Ok(())
     }
 
-    pub fn exit(&self) {
+    pub fn exit(&mut self) {
         self.handle.close();
     }
 

@@ -16,7 +16,7 @@ This project was greatly influenced by [shazow/ssh-chat](https://github.com/shaz
 - [x] Emacs-style key bindings
 - [x] Command history
 - [x] Configurable motd (message of the day)
-- [ ] Command autocomplete
+- [x] Command autocomplete
 - [ ] Automatically detect and handle idle users
 - [ ] Load user config overrides from ENV
 
@@ -26,9 +26,8 @@ This project was greatly influenced by [shazow/ssh-chat](https://github.com/shaz
 - [x] Messaging rate-limit to prevent spam
 - [x] Special commands for operators (`/kick`, `/ban`, `/mute`, etc.)
 
-### Configuration
+### CI/CD
 
-- [x] CLI for easy setup
 - [ ] CI/CD _(optional)_
 - [ ] Unit testing _(optional)_
 - [ ] Benches and performance improvements _(optional)_

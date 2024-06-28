@@ -3,6 +3,7 @@ use terminal_control::TerminalControl;
 
 use super::{terminal::Terminal, ServerRoom};
 
+mod autocomplete_control;
 mod command_control;
 mod context;
 mod control_handler;

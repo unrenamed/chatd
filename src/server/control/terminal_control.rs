@@ -4,6 +4,7 @@ use terminal_keycode::KeyCode;
 
 use crate::server::terminal::Terminal;
 
+use super::autocomplete_control::AutocompleteControl;
 use super::context::ControlContext;
 use super::control_handler::ControlHandler;
 use super::input_control::InputControl;
@@ -55,10 +56,6 @@ impl ControlHandler for TerminalControl {
                     terminal.input.move_cursor_next();
                     terminal.write_prompt().unwrap();
                 }
-                KeyCode::Char(_) | KeyCode::Space => {
-                    terminal.input.insert_before_cursor(&context.code.bytes());
-                    terminal.write_prompt().unwrap();
-                }
                 KeyCode::ArrowUp => {
                     terminal.input.set_history_prev();
                     terminal.write_prompt().unwrap();
@@ -67,7 +64,11 @@ impl ControlHandler for TerminalControl {
                     terminal.input.set_history_next();
                     terminal.write_prompt().unwrap();
                 }
-                KeyCode::Tab => todo!(),
+                KeyCode::Char(_) | KeyCode::Space => {
+                    terminal.input.insert_before_cursor(&context.code.bytes());
+                    terminal.write_prompt().unwrap();
+                }
+                KeyCode::Tab => return Some(Box::new(AutocompleteControl) as Box<dyn ControlHandler>),
                 KeyCode::Enter => return Some(Box::new(InputControl) as Box<dyn ControlHandler>),
                 _ => {}
             }

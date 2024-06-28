@@ -240,7 +240,7 @@ async fn execute_command(user: User, cmd: Command, terminal: &mut Terminal, room
             let member = room.find_member(username);
             let user = member.user.clone();
 
-            let message = message::System::new(user.clone(), Command::to_string(user.is_op));
+            let message = message::System::new(user.clone(), room.commands.to_string(user.is_op));
             room.send_message(message.into()).await;
         }
         Command::Quiet => {

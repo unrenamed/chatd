@@ -1,5 +1,7 @@
 use std::pin::Pin;
 
+use chrono::Utc;
+
 use super::command_control::CommandControl;
 use super::context::ControlContext;
 use super::control_handler::ControlHandler;
@@ -20,17 +22,15 @@ impl ControlHandler for InputControl {
         room: &'a mut ServerRoom,
     ) -> Pin<Box<dyn futures::Future<Output = Option<Box<dyn ControlHandler>>> + Send + 'a>> {
         Box::pin(async move {
-            let user_id = context.user_id;
-
-            let username = match room.try_find_name(&user_id) {
-                Some(name) => name,
-                None => return None,
+            let user = match &context.user {
+                Some(user) => user.clone(),
+                None => match room.try_find_member_by_id(context.user_id) {
+                    Some(m) => m.user.clone(),
+                    None => return None,
+                },
             };
 
-            let member = room.find_member(&username);
-            let user = member.user.clone();
-
-            let rl = room.ratelims.get(&user_id).unwrap();
+            let rl = room.ratelims.get(&context.user_id).unwrap();
             if let Err(remaining) = ratelimit::check(rl) {
                 let body = format!(
                     "rate limit exceeded. Message dropped. Next allowed in {}",
@@ -57,6 +57,7 @@ impl ControlHandler for InputControl {
             match cmd {
                 Err(err) if err == CommandParseError::NotRecognizedAsCommand => {
                     terminal.clear_input().unwrap();
+                    room.find_member_mut(&user.username).last_sent_at = Some(Utc::now());
 
                     let message = message::Public::new(user, input_str);
                     room.send_message(message.into()).await;
