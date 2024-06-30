@@ -17,8 +17,8 @@ This project was greatly influenced by [shazow/ssh-chat](https://github.com/shaz
 - [x] Command history
 - [x] Configurable motd (message of the day)
 - [x] Command autocomplete
+- [x] Load user config overrides from ENV
 - [ ] Automatically detect and handle idle users
-- [ ] Load user config overrides from ENV
 
 ### Security and Control
 

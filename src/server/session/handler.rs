@@ -160,11 +160,12 @@ impl Handler for ThinHandler {
         })
     }
 
+    #[allow(unused_variables)]
     async fn data(
         &mut self,
-        _: ChannelId,
+        channel: ChannelId,
         data: &[u8],
-        _: &mut Session,
+        session: &mut Session,
     ) -> Result<(), Self::Error> {
         let data = data.to_vec();
         let sender = self
@@ -179,16 +180,17 @@ impl Handler for ThinHandler {
         Ok(())
     }
 
+    #[allow(unused_variables)]
     async fn pty_request(
         &mut self,
-        _: ChannelId,
-        _: &str,
+        channel: ChannelId,
+        term: &str,
         col_width: u32,
         row_height: u32,
-        _: u32,
-        _: u32,
-        _: &[(Pty, u32)],
-        _: &mut Session,
+        pix_width: u32,
+        pix_height: u32,
+        modes: &[(Pty, u32)],
+        session: &mut Session,
     ) -> Result<(), Self::Error> {
         let sender = self
             .session_event_sender
@@ -208,14 +210,15 @@ impl Handler for ThinHandler {
         Ok(())
     }
 
+    #[allow(unused_variables)]
     async fn window_change_request(
         &mut self,
-        _: ChannelId,
+        channel: ChannelId,
         col_width: u32,
         row_height: u32,
-        _: u32,
-        _: u32,
-        _: &mut Session,
+        pix_width: u32,
+        pix_height: u32,
+        session: &mut Session,
     ) -> Result<(), Self::Error> {
         let sender = self
             .session_event_sender
@@ -230,6 +233,29 @@ impl Handler for ThinHandler {
                 ))
                 .await
                 .unwrap();
+        });
+
+        Ok(())
+    }
+
+    #[allow(unused_variables)]
+    async fn env_request(
+        &mut self,
+        channel: ChannelId,
+        variable_name: &str,
+        variable_value: &str,
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        let name = variable_name.to_string();
+        let value = variable_value.to_string();
+
+        let sender = self
+            .session_event_sender
+            .clone()
+            .expect("Session event sender to be initialized during session creation");
+
+        tokio::spawn(async move {
+            sender.send(SessionEvent::Env(name, value)).await.unwrap();
         });
 
         Ok(())

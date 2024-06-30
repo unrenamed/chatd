@@ -7,7 +7,10 @@ use tokio::spawn;
 use tokio::sync::mpsc::{self, Receiver};
 use tokio::sync::{watch, Mutex};
 
+use crate::server::control::env_control::EnvControl;
+use crate::server::control::terminal_control::TerminalControl;
 use crate::server::control::{run_control_chain, ControlContext};
+use crate::server::env::Env;
 use crate::server::terminal::{keyboard_decoder, Terminal, TerminalHandle};
 use crate::server::ServerRoom;
 
@@ -21,6 +24,7 @@ pub enum SessionEvent {
     Data(Vec<u8>),
     Disconnect,
     WindowResize(u16, u16),
+    Env(String, String),
 }
 
 pub enum SessionRepositoryEvent {
@@ -137,9 +141,22 @@ impl SessionRepository {
                     let mut terminal = terminal.lock().await;
                     let codes = keyboard_decoder::decode_bytes_to_codes(&data);
                     for code in codes {
-                        let mut context = ControlContext::new(id, code);
-                        run_control_chain(&mut context, &mut terminal, &mut room).await;
+                        let mut context = ControlContext::new(id);
+                        context.code = Some(code);
+                        let start = Box::new(TerminalControl);
+                        run_control_chain(start, &mut context, &mut terminal, &mut room).await;
                     }
+                }
+                SessionEvent::Env(name, value) => {
+                    let mut room = room.lock().await;
+                    let mut terminal = terminal.lock().await;
+                    let mut context = ControlContext::new(id);
+                    context.env = match format!("{name}={value}").parse::<Env>() {
+                        Ok(env) => Some(env),
+                        Err(_) => None,
+                    };
+                    let start = Box::new(EnvControl);
+                    run_control_chain(start, &mut context, &mut terminal, &mut room).await;
                 }
                 SessionEvent::Disconnect => {
                     let mut room = room.lock().await;

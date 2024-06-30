@@ -4,7 +4,7 @@ use clap::Parser;
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
     /// Port to listen on
-    #[arg(long, default_value_t = 2222)]
+    #[arg(long, default_value_t = 22)]
     pub port: u16,
 
     /// Private key to identify server with. Defaults to a temporary ed25519 key

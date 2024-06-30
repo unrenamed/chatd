@@ -19,7 +19,12 @@ impl ControlHandler for TerminalControl {
         _: &'a mut crate::server::ServerRoom,
     ) -> Pin<Box<dyn futures::Future<Output = Option<Box<dyn ControlHandler>>> + Send + 'a>> {
         Box::pin(async move {
-            match context.code {
+            if context.code.is_none() {
+                return None;
+            }
+
+            let code = context.code.as_ref().unwrap();
+            match code {
                 KeyCode::Backspace => {
                     terminal.input.remove_before_cursor();
                     terminal.write_prompt().unwrap();
@@ -65,10 +70,12 @@ impl ControlHandler for TerminalControl {
                     terminal.write_prompt().unwrap();
                 }
                 KeyCode::Char(_) | KeyCode::Space => {
-                    terminal.input.insert_before_cursor(&context.code.bytes());
+                    terminal.input.insert_before_cursor(&code.bytes());
                     terminal.write_prompt().unwrap();
                 }
-                KeyCode::Tab => return Some(Box::new(AutocompleteControl) as Box<dyn ControlHandler>),
+                KeyCode::Tab => {
+                    return Some(Box::new(AutocompleteControl) as Box<dyn ControlHandler>)
+                }
                 KeyCode::Enter => return Some(Box::new(InputControl) as Box<dyn ControlHandler>),
                 _ => {}
             }
