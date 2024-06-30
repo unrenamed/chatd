@@ -30,7 +30,14 @@ impl ControlHandler for InputControl {
                 },
             };
 
-            let rl = room.ratelims.get(&context.user_id).unwrap();
+            let rl = room.get_ratelimit(user.id).expect(
+                format!(
+                    "User {} MUST have a rate-limit within a server room",
+                    user.id
+                )
+                .as_str(),
+            );
+
             if let Err(remaining) = ratelimit::check(rl) {
                 let body = format!(
                     "rate limit exceeded. Message dropped. Next allowed in {}",
@@ -57,7 +64,8 @@ impl ControlHandler for InputControl {
             match cmd {
                 Err(err) if err == CommandParseError::NotRecognizedAsCommand => {
                     terminal.clear_input().unwrap();
-                    room.find_member_mut(&user.username).last_sent_at = Some(Utc::now());
+                    room.find_member_mut(&user.username)
+                        .update_last_sent_time(Utc::now());
 
                     let message = message::Public::new(user, input_str);
                     room.send_message(message.into()).await;

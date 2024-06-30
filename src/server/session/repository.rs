@@ -55,7 +55,7 @@ impl Debug for SessionRepositoryEvent {
 }
 
 pub struct SessionRepository {
-    pub repo_event_receiver: Receiver<SessionRepositoryEvent>,
+    repo_event_receiver: Receiver<SessionRepositoryEvent>,
 }
 
 impl SessionRepository {

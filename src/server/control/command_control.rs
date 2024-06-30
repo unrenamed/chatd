@@ -1,8 +1,5 @@
 use std::io::Write;
 use std::pin::Pin;
-use std::time::Duration;
-
-use chrono::Utc;
 
 use crate::server::auth::{BanAttribute, BanQuery};
 use crate::server::room::message::Message;
@@ -95,9 +92,9 @@ async fn execute_command(user: User, cmd: Command, terminal: &mut Terminal, room
             terminal.set_prompt(&terminal.get_prompt(&member.user));
 
             let member = member.clone();
-            room.members.insert(new_name.clone(), member);
-            room.members.remove(&old_name);
-            room.names.insert(user_id, new_name.clone());
+            room.add_member(new_name.clone(), member);
+            room.remove_member(&old_name);
+            room.add_name(user_id, new_name);
         }
         Command::Msg(to, msg) => 'label: {
             let from = room.find_member(username).user.clone();
@@ -148,7 +145,7 @@ async fn execute_command(user: User, cmd: Command, terminal: &mut Terminal, room
             }
 
             let target_id = &from.reply_to.unwrap();
-            let target_name = room.names.get(&target_id);
+            let target_name = room.try_get_name(&target_id);
             if target_name.is_none() {
                 let message =
                     message::Error::new(from.clone(), "user already left the room".to_string());
@@ -165,7 +162,7 @@ async fn execute_command(user: User, cmd: Command, terminal: &mut Terminal, room
             let member = room.find_member(username);
             let user = member.user.clone();
 
-            let mut usernames = room.names.values().collect::<Vec<&String>>();
+            let mut usernames = room.names().values().collect::<Vec<&String>>();
             usernames.sort_by_key(|a| a.to_lowercase());
 
             let colorized_names = usernames
@@ -175,7 +172,7 @@ async fn execute_command(user: User, cmd: Command, terminal: &mut Terminal, room
 
             let body = format!(
                 "{} connected: {}",
-                room.names.len(),
+                room.names().len(),
                 colorized_names.join(", ")
             );
 
@@ -240,7 +237,7 @@ async fn execute_command(user: User, cmd: Command, terminal: &mut Terminal, room
             let member = room.find_member(username);
             let user = member.user.clone();
 
-            let message = message::System::new(user.clone(), room.commands.to_string(user.is_op));
+            let message = message::System::new(user.clone(), room.commands().to_string(user.is_op));
             room.send_message(message.into()).await;
         }
         Command::Quiet => {
@@ -296,7 +293,7 @@ async fn execute_command(user: User, cmd: Command, terminal: &mut Terminal, room
                 let ignored_usernames: Vec<String> = user
                     .ignored
                     .iter()
-                    .filter_map(|id| room.names.get(id))
+                    .filter_map(|id| room.try_get_name(id))
                     .map(|name| user.theme.style_username(name).to_string())
                     .collect();
 
@@ -391,7 +388,7 @@ async fn execute_command(user: User, cmd: Command, terminal: &mut Terminal, room
                 let focused_usernames: Vec<String> = user
                     .focused
                     .iter()
-                    .filter_map(|id| room.names.get(id))
+                    .filter_map(|id| room.try_get_name(id))
                     .map(|name| user.theme.style_username(name).to_string())
                     .collect();
 
@@ -460,10 +457,7 @@ async fn execute_command(user: User, cmd: Command, terminal: &mut Terminal, room
             room.send_message(message.into()).await;
         }
         Command::Uptime => {
-            let now = Utc::now();
-            let since_created = now.signed_duration_since(room.created_at).num_seconds() as u64;
-            let uptime = humantime::format_duration(Duration::from_secs(since_created));
-            let message = message::System::new(user, uptime.to_string());
+            let message = message::System::new(user, room.uptime());
             room.send_message(message.into()).await;
         }
         Command::Mute(target_username) => 'label: {
@@ -506,9 +500,9 @@ async fn execute_command(user: User, cmd: Command, terminal: &mut Terminal, room
                 }
             }
         }
-        Command::Motd(text) => 'label: {
-            if text.is_none() {
-                let message = message::System::new(user, room.motd.clone());
+        Command::Motd(new_motd) => 'label: {
+            if new_motd.is_none() {
+                let message = message::System::new(user, room.motd().clone());
                 room.send_message(message.into()).await;
                 break 'label;
             }
@@ -520,12 +514,15 @@ async fn execute_command(user: User, cmd: Command, terminal: &mut Terminal, room
                 break 'label;
             }
 
-            let motd = text.unwrap();
-            room.motd = motd.clone();
+            room.set_motd(new_motd.unwrap());
 
             let message = message::Announce::new(
                 user.clone(),
-                format!("set new message of the day: {}-> {}", utils::NEWLINE, motd),
+                format!(
+                    "set new message of the day: {}-> {}",
+                    utils::NEWLINE,
+                    room.motd()
+                ),
             );
             room.send_message(message.into()).await;
         }
@@ -576,7 +573,7 @@ async fn execute_command(user: User, cmd: Command, terminal: &mut Terminal, room
                         .filter(|member| member.user.public_key.is_some())
                     {
                         Some(member) => {
-                            room.auth.lock().await.ban_fingerprint(
+                            room.auth().lock().await.ban_fingerprint(
                                 &member.user.public_key.as_ref().unwrap().fingerprint(),
                                 duration,
                             );
@@ -598,9 +595,9 @@ async fn execute_command(user: User, cmd: Command, terminal: &mut Terminal, room
                     for item in items {
                         match item.attribute {
                             BanAttribute::Name(name) => {
-                                room.auth.lock().await.ban_username(&name, item.duration);
+                                room.auth().lock().await.ban_username(&name, item.duration);
 
-                                for (_, member) in room.members.iter_mut() {
+                                for (_, member) in room.members_iter_mut() {
                                     if member.user.username.eq(&name) {
                                         terminal.exit();
                                         let message = message::Announce::new(
@@ -612,12 +609,12 @@ async fn execute_command(user: User, cmd: Command, terminal: &mut Terminal, room
                                 }
                             }
                             BanAttribute::Fingerprint(fingerprint) => {
-                                room.auth
+                                room.auth()
                                     .lock()
                                     .await
                                     .ban_fingerprint(&fingerprint, item.duration);
 
-                                for (_, member) in room.members.iter_mut() {
+                                for (_, member) in room.members_iter_mut() {
                                     if let Some(key) = &member.user.public_key {
                                         if key.fingerprint().eq(&fingerprint) {
                                             terminal.exit();
@@ -656,7 +653,7 @@ async fn execute_command(user: User, cmd: Command, terminal: &mut Terminal, room
                 break 'label;
             }
 
-            let (names, fingerprints) = room.auth.lock().await.banned();
+            let (names, fingerprints) = room.auth().lock().await.banned();
             let mut buf = Vec::new();
             write!(buf, "Banned:").unwrap();
 

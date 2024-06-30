@@ -10,8 +10,8 @@ use super::message::MessageFormatter;
 #[derive(Clone)]
 pub struct RoomMember {
     pub user: User,
-    pub message_tx: mpsc::Sender<String>,
-    pub last_sent_at: Option<DateTime<Utc>>,
+    message_tx: mpsc::Sender<String>,
+    last_sent_at: Option<DateTime<Utc>>,
 }
 
 impl RoomMember {
@@ -21,6 +21,14 @@ impl RoomMember {
             message_tx,
             last_sent_at: None,
         }
+    }
+
+    pub fn last_sent_time(&self) -> &Option<DateTime<Utc>> {
+        &self.last_sent_at
+    }
+
+    pub fn update_last_sent_time(&mut self, time: DateTime<Utc>) {
+        self.last_sent_at = Some(time);
     }
 
     pub async fn send_message(&self, msg: Message) -> Result<(), mpsc::error::SendError<String>> {

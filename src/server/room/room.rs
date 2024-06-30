@@ -1,5 +1,7 @@
+use std::collections::hash_map::IterMut;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use governor::Quota;
@@ -25,14 +27,14 @@ const MESSAGE_MAX_BURST: std::num::NonZeroU32 = nonzero!(10u32);
 const MESSAGE_RATE_QUOTA: Quota = Quota::per_second(MESSAGE_MAX_BURST);
 
 pub struct ServerRoom {
-    pub names: HashMap<UserId, UserName>,
-    pub members: HashMap<UserName, RoomMember>,
-    pub ratelims: HashMap<UserId, RateLimit>,
-    pub history: MessageHistory,
-    pub commands: CommandCollection,
-    pub motd: String,
-    pub created_at: DateTime<Utc>,
-    pub auth: Arc<Mutex<Auth>>,
+    names: HashMap<UserId, UserName>,
+    members: HashMap<UserName, RoomMember>,
+    ratelims: HashMap<UserId, RateLimit>,
+    history: MessageHistory,
+    commands: CommandCollection,
+    motd: String,
+    created_at: DateTime<Utc>,
+    auth: Arc<Mutex<Auth>>,
 }
 
 impl ServerRoom {
@@ -47,6 +49,52 @@ impl ServerRoom {
             motd: motd.to_string(),
             created_at: Utc::now(),
         }
+    }
+
+    pub fn commands(&self) -> &CommandCollection {
+        &self.commands
+    }
+
+    pub fn motd(&self) -> &String {
+        &self.motd
+    }
+
+    pub fn set_motd(&mut self, motd: String) {
+        self.motd = motd;
+    }
+
+    pub fn uptime(&self) -> String {
+        let now = Utc::now();
+        let since_created = now.signed_duration_since(self.created_at).num_seconds() as u64;
+        humantime::format_duration(Duration::from_secs(since_created)).to_string()
+    }
+
+    pub fn auth(&self) -> &Arc<Mutex<Auth>> {
+        &self.auth
+    }
+
+    pub fn get_ratelimit(&self, user_id: UserId) -> Option<&RateLimit> {
+        self.ratelims.get(&user_id)
+    }
+
+    pub fn add_member(&mut self, name: UserName, member: RoomMember) {
+        self.members.insert(name, member);
+    }
+
+    pub fn remove_member(&mut self, username: &UserName) {
+        self.members.remove(username);
+    }
+
+    pub fn add_name(&mut self, id: UserId, name: UserName) {
+        self.names.insert(id, name);
+    }
+
+    pub fn members_iter_mut(&mut self) -> IterMut<UserName, RoomMember> {
+        self.members.iter_mut()
+    }
+
+    pub fn names(&self) -> &HashMap<UserId, UserName> {
+        &self.names
     }
 
     pub async fn join(
@@ -65,7 +113,8 @@ impl ServerRoom {
 
         let user = User::new(user_id, name.clone(), ssh_id, key, is_op);
         let member = RoomMember::new(user.clone(), tx);
-        self.members.insert(name.clone(), member.clone());
+
+        self.members.insert(name.clone(), member);
         self.names.insert(user_id, name.clone());
         self.ratelims
             .insert(user_id, RateLimit::direct(MESSAGE_RATE_QUOTA));
@@ -100,7 +149,7 @@ impl ServerRoom {
     }
 
     pub async fn leave(&mut self, user_id: &UserId) {
-        let name = self.try_find_name(user_id);
+        let name = self.try_get_name(user_id);
         if let None = name {
             return;
         }
@@ -221,7 +270,7 @@ impl ServerRoom {
         }
 
         // Sort in descending order (recently active first)
-        members.sort_by(|a, b| b.last_sent_at.cmp(&a.last_sent_at));
+        members.sort_by(|a, b| b.last_sent_time().cmp(&a.last_sent_time()));
 
         let names: Vec<&String> = members.iter().map(|m| &m.user.username).collect();
         if names.is_empty() {
@@ -251,7 +300,7 @@ impl ServerRoom {
     }
 
     pub fn try_find_member_by_id(&mut self, user_id: UserId) -> Option<&RoomMember> {
-        let name = self.try_find_name(&user_id);
+        let name = self.try_get_name(&user_id);
         match name {
             Some(username) => self.try_find_member(username),
             None => None,
@@ -266,7 +315,7 @@ impl ServerRoom {
         self.members.get_mut(username)
     }
 
-    pub fn try_find_name(&self, user_id: &UserId) -> Option<&UserName> {
+    pub fn try_get_name(&self, user_id: &UserId) -> Option<&UserName> {
         self.names.get(user_id)
     }
 }

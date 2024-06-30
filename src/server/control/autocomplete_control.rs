@@ -30,7 +30,7 @@ impl ControlHandler for AutocompleteControl {
             let cursor_pos = terminal.input.cursor_byte_pos();
 
             if cmd.starts_with("/") && cursor_pos > 0 && cursor_pos <= cmd_end_pos {
-                let completed = room.commands.from_prefix(&cmd);
+                let completed = room.commands().from_prefix(&cmd);
                 if let Some(command) = completed {
                     let cmd_bytes = command.cmd().as_bytes();
                     terminal.input.move_cursor_to(cmd_end_pos);
