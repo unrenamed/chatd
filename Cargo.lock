@@ -283,6 +283,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "chatd"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "circular-buffer",
+ "clap",
+ "crossterm",
+ "dirs",
+ "enum_dispatch",
+ "fnv",
+ "futures",
+ "governor",
+ "humantime",
+ "log",
+ "log4rs",
+ "nonzero_ext",
+ "rand 0.8.5",
+ "regex",
+ "russh",
+ "russh-keys",
+ "strum",
+ "terminal-keycode",
+ "tokio",
+ "unicode-segmentation",
+ "unicode-width",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.38"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1825,36 +1855,6 @@ checksum = "d91ed6c858b01f942cd56b37a94b3e0a1798290327d1236e4d9cf4eaca44d29d"
 dependencies = [
  "base64ct",
  "der",
-]
-
-[[package]]
-name = "ssh-chat"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "circular-buffer",
- "clap",
- "crossterm",
- "dirs",
- "enum_dispatch",
- "fnv",
- "futures",
- "governor",
- "humantime",
- "log",
- "log4rs",
- "nonzero_ext",
- "rand 0.8.5",
- "regex",
- "russh",
- "russh-keys",
- "strum",
- "terminal-keycode",
- "tokio",
- "unicode-segmentation",
- "unicode-width",
 ]
 
 [[package]]

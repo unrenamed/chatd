@@ -1,12 +1,12 @@
 [package]
-name = "ssh-chat"
+name = "chatd"
 version = "0.1.0"
 edition = "2021"
 authors = ["unrenamed <renkonazbka@gmail.com>"]
 description = "SSH Chat: Real-time communication over SSH"
 readme = "README.md"
-homepage = "https://github.com/unrenamed/ssh-chat"
-repository = "https://github.com/unrenamed/ssh-chat"
+homepage = "https://github.com/unrenamed/chatd"
+repository = "https://github.com/unrenamed/chatd"
 keywords = ["ssh", "chat", "ssh-chat", "ssh-server"]
 categories = ["chats"]
 

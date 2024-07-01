@@ -1,4 +1,4 @@
-# ssh-chat
+# chatd
 
 🚧 Work in Progress! 🚧
 
@@ -37,7 +37,7 @@ This project was greatly influenced by [shazow/ssh-chat](https://github.com/shaz
 ```console
 SSH Chat: Real-time communication over SSH
 
-Usage: ssh-chat [OPTIONS]
+Usage: chatd [OPTIONS]
 
 Options:
       --port <PORT>       Port to listen on [default: 2222]
