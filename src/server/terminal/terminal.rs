@@ -16,15 +16,15 @@ use super::input::TerminalInput;
 pub struct Terminal {
     pub input: TerminalInput,
     prompt: String,
-    prompt_visual_len: u16,
+    prompt_display_width: u16,
     handle: TerminalHandle,
+    outbuff: Vec<u8>,
     term_width: u16,
     term_height: u16,
     cursor_x: u16,
     cursor_y: u16,
-    prompt_x: u16,
-    prompt_y: u16,
-    outbuff: Vec<u8>,
+    input_end_x: u16,
+    input_end_y: u16,
 }
 
 impl Terminal {
@@ -32,23 +32,23 @@ impl Terminal {
         Self {
             handle,
             prompt: String::new(),
-            prompt_visual_len: 0,
+            prompt_display_width: 0,
             input: Default::default(),
+            outbuff: vec![],
             term_width: 0,
             term_height: 0,
             cursor_x: 0,
             cursor_y: 0,
-            prompt_x: 0,
-            prompt_y: 0,
-            outbuff: vec![],
+            input_end_x: 0,
+            input_end_y: 0,
         }
     }
 
     pub fn set_size(&mut self, width: u16, height: u16) {
         self.term_width = width;
         self.term_height = height;
-        self.update_prompt_cursor();
-        self.update_cursor();
+        self.refresh_cursor_coords();
+        self.refresh_input_end_coords();
     }
 
     pub fn get_prompt(&self, user: &User) -> String {
@@ -57,12 +57,12 @@ impl Terminal {
 
     pub fn set_prompt(&mut self, prompt: &str) {
         self.prompt = prompt.to_string();
-        self.prompt_visual_len = display_width(&self.prompt) as u16;
+        self.prompt_display_width = display_width(&self.prompt) as u16;
     }
 
     pub fn clear_input(&mut self) -> Result<(), anyhow::Error> {
         self.input.clear();
-        self.write_prompt()?;
+        self.print_input_line()?;
         Ok(())
     }
 
@@ -70,70 +70,75 @@ impl Terminal {
         self.handle.close();
     }
 
-    pub fn write_prompt(&mut self) -> Result<(), anyhow::Error> {
+    pub fn print_input_line(&mut self) -> Result<(), anyhow::Error> {
         self.queue_prompt_cleanup()?;
-        self.queue_write_line(&self.prompt.to_string())?;
-        self.queue_write_line(&self.input.to_string())?;
-        self.queue_outbuff_write()?;
+        self.queue_write_prompt()?;
+        self.queue_write_input()?;
+        self.queue_write_outbuff()?;
         self.queue_move_cursor()?;
         self.handle.flush()?;
         Ok(())
     }
 
-    pub fn write_message(&mut self, msg: &str) -> Result<(), anyhow::Error> {
+    pub fn print_message(&mut self, msg: &str) -> Result<(), anyhow::Error> {
         self.queue_prompt_cleanup()?;
-        self.queue_write_with_crlf(msg)?;
-        self.queue_write_line(&self.prompt.to_string())?;
-        self.queue_write_line(&self.input.to_string())?;
-        self.queue_outbuff_write()?;
+        self.queue_write_message(msg)?;
+        self.queue_write_prompt()?;
+        self.queue_write_input()?;
+        self.queue_write_outbuff()?;
         self.queue_move_cursor()?;
         self.handle.flush()?;
         Ok(())
     }
 
     fn queue_prompt_cleanup(&mut self) -> Result<(), anyhow::Error> {
-        if self.cursor_y < self.prompt_y {
-            queue!(self.handle, cursor::MoveDown(self.prompt_y - self.cursor_y))?;
+        if self.cursor_y < self.input_end_y {
+            queue!(
+                self.handle,
+                cursor::MoveDown(self.input_end_y - self.cursor_y)
+            )?;
         }
 
-        self.prompt_x = 0;
+        self.input_end_x = 0;
         queue!(
             self.handle,
             cursor::MoveToColumn(0),
             Clear(ClearType::CurrentLine)
         )?;
 
-        while self.prompt_y > 0 {
+        while self.input_end_y > 0 {
             queue!(
                 self.handle,
                 cursor::MoveUp(1),
                 Clear(ClearType::CurrentLine)
             )?;
-            self.prompt_y -= 1;
+            self.input_end_y -= 1;
         }
 
-        self.cursor_x = self.prompt_x;
-        self.cursor_y = self.prompt_y;
+        self.cursor_x = self.input_end_x;
+        self.cursor_y = self.input_end_y;
 
         Ok(())
     }
 
-    fn queue_write_with_crlf(&mut self, line: &str) -> Result<(), anyhow::Error> {
-        queue!(
-            self.handle,
-            style::Print(line),
-            style::Print(utils::NEWLINE)
-        )?;
+    fn queue_write_message(&mut self, msg: &str) -> Result<(), anyhow::Error> {
+        queue!(self.handle, style::Print(msg), style::Print(utils::NEWLINE))?;
         Ok(())
     }
 
-    fn queue_write_line(&mut self, line: &str) -> Result<(), anyhow::Error> {
-        queue!(self.handle, style::Print(line))?;
-        self.advance_cursor(utils::display_width(line) as u16);
+    fn queue_write_prompt(&mut self) -> Result<(), anyhow::Error> {
+        queue!(self.handle, style::Print(&self.prompt))?;
+        self.advance_cursor_pos(self.prompt_display_width);
         Ok(())
     }
 
-    fn queue_outbuff_write(&mut self) -> Result<(), anyhow::Error> {
+    fn queue_write_input(&mut self) -> Result<(), anyhow::Error> {
+        queue!(self.handle, style::Print(&self.input))?;
+        self.advance_cursor_pos(self.input.display_width() as u16);
+        Ok(())
+    }
+
+    fn queue_write_outbuff(&mut self) -> Result<(), anyhow::Error> {
         queue!(
             self.handle,
             style::Print(String::from_utf8_lossy(&self.outbuff))
@@ -147,17 +152,9 @@ impl Terminal {
             return Ok(());
         }
 
-        let input = self.input.text().as_str();
-        let pos = self.input.cursor_char_pos().min(self.input.char_count());
-        let graphemes: Vec<&str> = UnicodeSegmentation::graphemes(input, true).collect();
-        let visual_length_up_to_pos = graphemes
-            .iter()
-            .take(pos)
-            .map(|g| utils::display_width(g) as u16)
-            .sum::<u16>();
-        let total_visual_length = self.prompt_visual_len + visual_length_up_to_pos;
-        let y = total_visual_length / self.term_width;
-        let x = total_visual_length % self.term_width;
+        let total_width = self.prompt_display_width + self.get_display_width_up_to_cursor_pos();
+        let y = total_width / self.term_width;
+        let x = total_width % self.term_width;
 
         let up = if y < self.cursor_y {
             self.cursor_y - y
@@ -199,7 +196,7 @@ impl Terminal {
         Ok(())
     }
 
-    fn advance_cursor(&mut self, places: u16) {
+    fn advance_cursor_pos(&mut self, places: u16) {
         if self.term_width == 0 {
             return;
         }
@@ -208,9 +205,9 @@ impl Terminal {
         self.cursor_y += self.cursor_x / self.term_width;
         self.cursor_x = self.cursor_x % self.term_width;
 
-        self.prompt_x += places;
-        self.prompt_y += self.prompt_x / self.term_width;
-        self.prompt_x = self.prompt_x % self.term_width;
+        self.input_end_x += places;
+        self.input_end_y += self.input_end_x / self.term_width;
+        self.input_end_x = self.input_end_x % self.term_width;
 
         if places > 0 && self.cursor_x == 0 {
             self.outbuff.push(b'\r');
@@ -218,30 +215,32 @@ impl Terminal {
         }
     }
 
-    fn update_prompt_cursor(&mut self) {
+    fn refresh_cursor_coords(&mut self) {
         if self.term_width == 0 {
             return;
         }
+        let total_width = self.prompt_display_width + self.get_display_width_up_to_cursor_pos();
+        self.cursor_y = total_width / self.term_width;
+        self.cursor_x = total_width % self.term_width;
+    }
 
-        let input = self.input.text().as_str();
+    fn refresh_input_end_coords(&mut self) {
+        if self.term_width == 0 {
+            return;
+        }
+        let total_visual_length = self.prompt_display_width + self.input.display_width() as u16;
+        self.input_end_y = total_visual_length / self.term_width;
+        self.input_end_x = total_visual_length % self.term_width;
+    }
+
+    fn get_display_width_up_to_cursor_pos(&self) -> u16 {
         let pos = self.input.cursor_char_pos().min(self.input.char_count());
+        let input = self.input.text().as_str();
         let graphemes: Vec<&str> = UnicodeSegmentation::graphemes(input, true).collect();
-        let visual_length_up_to_pos = graphemes
+        graphemes
             .iter()
             .take(pos)
             .map(|g| utils::display_width(g) as u16)
-            .sum::<u16>();
-        let total_visual_length = self.prompt_visual_len + visual_length_up_to_pos;
-        self.prompt_y = total_visual_length / self.term_width;
-        self.prompt_x = total_visual_length % self.term_width;
-    }
-
-    fn update_cursor(&mut self) {
-        if self.term_width == 0 {
-            return;
-        }
-        let total_visual_length = self.prompt_visual_len + self.input.display_width() as u16;
-        self.cursor_y = total_visual_length / self.term_width;
-        self.cursor_x = total_visual_length % self.term_width;
+            .sum::<u16>()
     }
 }

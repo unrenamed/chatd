@@ -36,7 +36,7 @@ impl ControlHandler for AutocompleteControl {
                     terminal.input.move_cursor_to(cmd_end_pos);
                     terminal.input.remove_last_word_before_cursor();
                     terminal.input.insert_before_cursor(cmd_bytes);
-                    terminal.write_prompt().unwrap();
+                    terminal.print_input_line().unwrap();
                 }
             } else if !name.is_empty() && cursor_pos > cmd_end_pos + 1 && cursor_pos <= name_end_pos
             {
@@ -53,7 +53,7 @@ impl ControlHandler for AutocompleteControl {
                     terminal.input.move_cursor_to(name_end_pos);
                     terminal.input.remove_last_word_before_cursor();
                     terminal.input.insert_before_cursor(name_bytes);
-                    terminal.write_prompt().unwrap();
+                    terminal.print_input_line().unwrap();
                 }
             }
 

@@ -188,7 +188,7 @@ impl SessionRepository {
             }
             _ = async {
                 while let Some(msg) = message_rx.recv().await {
-                    let _ = terminal.lock().await.write_message(&msg);
+                    let _ = terminal.lock().await.print_message(&msg);
                 }
             } => {
                 // Warning: This situation is uncommon and should not occur under normal circumstances.
