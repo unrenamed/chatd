@@ -2,28 +2,32 @@ use async_trait::async_trait;
 use terminal_keycode::KeyCode;
 
 use crate::server::terminal::Terminal;
+use crate::server::ServerRoom;
 
-use super::autocomplete_control::AutocompleteControl;
-use super::context::ControlContext;
-use super::control_handler::ControlHandler;
-use super::input_control::InputControl;
+use super::handler::WorkflowHandler;
+use super::WorkflowContext;
 
-pub struct TerminalControl;
+pub struct TerminalKeyMapper {
+    key: KeyCode,
+    next: Option<Box<dyn WorkflowHandler>>,
+}
+
+impl TerminalKeyMapper {
+    pub fn new(key: KeyCode) -> Self {
+        Self { key, next: None }
+    }
+}
 
 #[async_trait]
-impl ControlHandler for TerminalControl {
-    async fn handle<'a>(
-        &'a self,
-        context: &'a mut ControlContext,
-        terminal: &'a mut Terminal,
-        _: &'a mut crate::server::ServerRoom,
-    ) -> Option<Box<dyn ControlHandler>> {
-        if context.code.is_none() {
-            return None;
-        }
-
-        let code = context.code.as_ref().unwrap();
-        match code {
+impl WorkflowHandler for TerminalKeyMapper {
+    #[allow(unused_variables)]
+    async fn handle(
+        &mut self,
+        context: &mut WorkflowContext,
+        terminal: &mut Terminal,
+        room: &mut ServerRoom,
+    ) {
+        match self.key {
             KeyCode::Backspace => {
                 terminal.input.remove_before_cursor();
                 terminal.print_input_line().unwrap();
@@ -69,14 +73,14 @@ impl ControlHandler for TerminalControl {
                 terminal.print_input_line().unwrap();
             }
             KeyCode::Char(_) | KeyCode::Space => {
-                terminal.input.insert_before_cursor(&code.bytes());
+                terminal.input.insert_before_cursor(&self.key.bytes());
                 terminal.print_input_line().unwrap();
             }
-            KeyCode::Tab => return Some(Box::new(AutocompleteControl) as Box<dyn ControlHandler>),
-            KeyCode::Enter => return Some(Box::new(InputControl) as Box<dyn ControlHandler>),
             _ => {}
         }
+    }
 
-        None
+    fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler>> {
+        &mut self.next
     }
 }

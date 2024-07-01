@@ -1,24 +1,28 @@
 use async_trait::async_trait;
 
-use super::context::ControlContext;
-use super::control_handler::ControlHandler;
+use super::handler::WorkflowHandler;
+use super::WorkflowContext;
 
 use crate::server::terminal::Terminal;
 use crate::server::ServerRoom;
 
-pub struct AutocompleteControl;
+#[derive(Default)]
+pub struct Autocomplete {
+    next: Option<Box<dyn WorkflowHandler>>,
+}
 
 #[async_trait]
-impl ControlHandler for AutocompleteControl {
-    async fn handle<'a>(
-        &'a self,
-        context: &'a mut ControlContext,
-        terminal: &'a mut Terminal,
-        room: &'a mut ServerRoom,
-    ) -> Option<Box<dyn ControlHandler>> {
+impl WorkflowHandler for Autocomplete {
+    #[allow(unused_variables)]
+    async fn handle(
+        &mut self,
+        context: &mut WorkflowContext,
+        terminal: &mut Terminal,
+        room: &mut ServerRoom,
+    ) {
         let input_str = terminal.input.to_string();
         if input_str.trim().is_empty() {
-            return None;
+            return;
         }
 
         let mut iter = input_str.splitn(3, ' ');
@@ -39,14 +43,7 @@ impl ControlHandler for AutocompleteControl {
                 terminal.print_input_line().unwrap();
             }
         } else if !name.is_empty() && cursor_pos > cmd_end_pos + 1 && cursor_pos <= name_end_pos {
-            let user = match &context.user {
-                Some(user) => user.clone(),
-                None => match room.try_find_member_by_id(context.user_id) {
-                    Some(m) => m.user.clone(),
-                    None => return None,
-                },
-            };
-            let completed = room.find_name_by_prefix(name, &user.username);
+            let completed = room.find_name_by_prefix(name, &context.user.username);
             if let Some(username) = completed {
                 let name_bytes = username.as_bytes();
                 terminal.input.move_cursor_to(name_end_pos);
@@ -55,7 +52,9 @@ impl ControlHandler for AutocompleteControl {
                 terminal.print_input_line().unwrap();
             }
         }
+    }
 
-        None
+    fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler>> {
+        &mut self.next
     }
 }

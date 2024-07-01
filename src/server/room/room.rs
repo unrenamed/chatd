@@ -299,12 +299,10 @@ impl ServerRoom {
         self.members.contains_key(username)
     }
 
-    pub fn try_find_member_by_id(&mut self, user_id: UserId) -> Option<&RoomMember> {
-        let name = self.try_get_name(&user_id);
-        match name {
-            Some(username) => self.try_find_member(username),
-            None => None,
-        }
+    pub fn find_member_by_id(&mut self, user_id: UserId) -> &RoomMember {
+        self.try_get_name(&user_id)
+            .and_then(|name| self.try_find_member(name))
+            .expect(format!("User {user_id} MUST have an member within a server room").as_str())
     }
 
     pub fn try_find_member(&self, username: &str) -> Option<&RoomMember> {

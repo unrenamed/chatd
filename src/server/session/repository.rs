@@ -3,15 +3,15 @@ use std::sync::Arc;
 
 use log::{debug, info, warn};
 use russh_keys::key::PublicKey;
+use terminal_keycode::KeyCode;
 use tokio::spawn;
 use tokio::sync::mpsc::{self, Receiver};
 use tokio::sync::{watch, Mutex};
 
-use crate::server::control::env_control::EnvControl;
-use crate::server::control::terminal_control::TerminalControl;
-use crate::server::control::{run_control_chain, ControlContext};
-use crate::server::env::Env;
-use crate::server::terminal::{keyboard_decoder, Terminal, TerminalHandle};
+use crate::server::session_workflow::*;
+use crate::server::terminal::keyboard_decoder;
+use crate::server::terminal::Terminal;
+use crate::server::terminal::TerminalHandle;
 use crate::server::ServerRoom;
 
 type SessionId = usize;
@@ -138,25 +138,43 @@ impl SessionRepository {
             match event {
                 SessionEvent::Data(data) => {
                     let mut room = room.lock().await;
-                    let mut terminal = terminal.lock().await;
+                    let mut term = terminal.lock().await;
+
+                    let user = room.find_member_by_id(id).user.clone();
+                    let mut ctx = WorkflowContext::new(user);
+
                     let codes = keyboard_decoder::decode_bytes_to_codes(&data);
                     for code in codes {
-                        let mut context = ControlContext::new(id);
-                        context.code = Some(code);
-                        let start = Box::new(TerminalControl);
-                        run_control_chain(start, &mut context, &mut terminal, &mut room).await;
+                        match code {
+                            KeyCode::Tab => {
+                                let mut autocomplete = Autocomplete::default();
+                                autocomplete.execute(&mut ctx, &mut term, &mut room).await;
+                            }
+                            KeyCode::Enter => {
+                                let command_executor = CommandExecutor::default();
+                                let command_parser = CommandParser::new(command_executor);
+                                let input_validator = InputValidator::new(command_parser);
+                                let mut rate_checker = InputRateChecker::new(input_validator);
+                                rate_checker.execute(&mut ctx, &mut term, &mut room).await;
+                            }
+                            _ => {
+                                let mut key_mapper = TerminalKeyMapper::new(code);
+                                key_mapper.execute(&mut ctx, &mut term, &mut room).await;
+                            }
+                        }
                     }
                 }
                 SessionEvent::Env(name, value) => {
                     let mut room = room.lock().await;
-                    let mut terminal = terminal.lock().await;
-                    let mut context = ControlContext::new(id);
-                    context.env = match format!("{name}={value}").parse::<Env>() {
-                        Ok(env) => Some(env),
-                        Err(_) => None,
-                    };
-                    let start = Box::new(EnvControl);
-                    run_control_chain(start, &mut context, &mut terminal, &mut room).await;
+                    let mut term = terminal.lock().await;
+
+                    let user = room.find_member_by_id(id).user.clone();
+                    let mut ctx = WorkflowContext::new(user);
+
+                    let command_executor = CommandExecutor::default();
+                    let command_parser = CommandParser::new(command_executor);
+                    let mut env_parser = EnvParser::new(name, value, command_parser);
+                    env_parser.execute(&mut ctx, &mut term, &mut room).await;
                 }
                 SessionEvent::Disconnect => {
                     let mut room = room.lock().await;
