@@ -1,5 +1,4 @@
-use std::pin::Pin;
-
+use async_trait::async_trait;
 use chrono::Utc;
 
 use super::command_control::CommandControl;
@@ -14,87 +13,86 @@ pub struct InputControl;
 
 const INPUT_MAX_LEN: usize = 1024;
 
+#[async_trait]
 impl ControlHandler for InputControl {
-    fn handle<'a>(
+    async fn handle<'a>(
         &'a self,
         context: &'a mut ControlContext,
         terminal: &'a mut Terminal,
         room: &'a mut ServerRoom,
-    ) -> Pin<Box<dyn futures::Future<Output = Option<Box<dyn ControlHandler>>> + Send + 'a>> {
-        Box::pin(async move {
-            let user = match &context.user {
-                Some(user) => user.clone(),
-                None => match room.try_find_member_by_id(context.user_id) {
-                    Some(m) => m.user.clone(),
-                    None => return None,
-                },
-            };
+    ) -> Option<Box<dyn ControlHandler>> {
+        let user = match &context.user {
+            Some(user) => user.clone(),
+            None => match room.try_find_member_by_id(context.user_id) {
+                Some(m) => m.user.clone(),
+                None => return None,
+            },
+        };
 
-            let rl = room.get_ratelimit(user.id).expect(
-                format!(
-                    "User {} MUST have a rate-limit within a server room",
-                    user.id
-                )
-                .as_str(),
+        let rl = room.get_ratelimit(user.id).expect(
+            format!(
+                "User {} MUST have a rate-limit within a server room",
+                user.id
+            )
+            .as_str(),
+        );
+
+        if let Err(remaining) = ratelimit::check(rl) {
+            let body = format!(
+                "rate limit exceeded. Message dropped. Next allowed in {}",
+                humantime::format_duration(remaining)
             );
+            let message = message::Error::new(user, body);
+            room.send_message(message.into()).await;
+            return None;
+        }
 
-            if let Err(remaining) = ratelimit::check(rl) {
-                let body = format!(
-                    "rate limit exceeded. Message dropped. Next allowed in {}",
-                    humantime::format_duration(remaining)
-                );
-                let message = message::Error::new(user, body);
+        let input_str = terminal.input.to_string();
+        if input_str.trim().is_empty() {
+            return None;
+        }
+
+        if input_str.len() > INPUT_MAX_LEN {
+            let message =
+                message::Error::new(user, "message dropped. Input is too long".to_string());
+            room.send_message(message.into()).await;
+            return None;
+        }
+
+        let cmd = input_str.parse::<Command>();
+        match cmd {
+            Err(err) if err == CommandParseError::NotRecognizedAsCommand => {
+                terminal.clear_input().unwrap();
+                room.find_member_mut(&user.username)
+                    .update_last_sent_time(Utc::now());
+
+                let message = message::Public::new(user, input_str);
                 room.send_message(message.into()).await;
+
                 return None;
             }
+            Err(err) => {
+                terminal.input.push_to_history();
+                terminal.clear_input().unwrap();
 
-            let input_str = terminal.input.to_string();
-            if input_str.trim().is_empty() {
-                return None;
-            }
-
-            if input_str.len() > INPUT_MAX_LEN {
-                let message =
-                    message::Error::new(user, "message dropped. Input is too long".to_string());
+                let message = message::Command::new(user.clone(), input_str);
                 room.send_message(message.into()).await;
+                let message = message::Error::new(user, format!("{}", err));
+                room.send_message(message.into()).await;
+
                 return None;
             }
+            Ok(_) => {
+                terminal.input.push_to_history();
+                terminal.clear_input().unwrap();
 
-            let cmd = input_str.parse::<Command>();
-            match cmd {
-                Err(err) if err == CommandParseError::NotRecognizedAsCommand => {
-                    terminal.clear_input().unwrap();
-                    room.find_member_mut(&user.username)
-                        .update_last_sent_time(Utc::now());
+                let message = message::Command::new(user.clone(), input_str);
+                room.send_message(message.into()).await;
 
-                    let message = message::Public::new(user, input_str);
-                    room.send_message(message.into()).await;
-
-                    return None;
-                }
-                Err(err) => {
-                    terminal.input.push_to_history();
-                    terminal.clear_input().unwrap();
-
-                    let message = message::Command::new(user.clone(), input_str);
-                    room.send_message(message.into()).await;
-                    let message = message::Error::new(user, format!("{}", err));
-                    room.send_message(message.into()).await;
-
-                    return None;
-                }
-                Ok(_) => {
-                    terminal.input.push_to_history();
-                    terminal.clear_input().unwrap();
-
-                    let message = message::Command::new(user.clone(), input_str);
-                    room.send_message(message.into()).await;
-
-                    context.user = Some(user);
-                    context.command = Some(cmd.unwrap());
-                    return Some(Box::new(CommandControl) as Box<dyn ControlHandler>);
-                }
+                context.user = Some(user);
+                context.command = Some(cmd.unwrap());
+                return Some(Box::new(CommandControl) as Box<dyn ControlHandler>);
             }
-        })
+        }
     }
 }

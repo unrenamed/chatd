@@ -1,5 +1,6 @@
 use std::io::Write;
-use std::pin::Pin;
+
+use async_trait::async_trait;
 
 use crate::server::auth::{BanAttribute, BanQuery};
 use crate::server::room::message::Message;
@@ -12,22 +13,21 @@ use super::control_handler::ControlHandler;
 
 pub struct CommandControl;
 
+#[async_trait]
 impl ControlHandler for CommandControl {
-    fn handle<'a>(
+    async fn handle<'a>(
         &'a self,
         context: &'a mut super::context::ControlContext,
         terminal: &'a mut Terminal,
         room: &'a mut ServerRoom,
-    ) -> Pin<Box<dyn futures::Future<Output = Option<Box<dyn ControlHandler>>> + Send + 'a>> {
-        Box::pin(async move {
-            match (&context.user, &context.command) {
-                (Some(user), Some(command)) => {
-                    execute_command(user.clone(), command.clone(), terminal, room).await
-                }
-                _ => {}
+    ) -> Option<Box<dyn ControlHandler>> {
+        match (&context.user, &context.command) {
+            (Some(user), Some(command)) => {
+                execute_command(user.clone(), command.clone(), terminal, room).await
             }
-            None
-        })
+            _ => {}
+        }
+        None
     }
 }
 

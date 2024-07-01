@@ -1,14 +1,15 @@
+use async_trait::async_trait;
+
 use crate::server::{terminal::Terminal, ServerRoom};
-use std::future::Future;
-use std::pin::Pin;
 
 use super::context::ControlContext;
 
+#[async_trait]
 pub trait ControlHandler: Send {
-    fn handle<'a>(
+    async fn handle<'a>(
         &'a self,
         context: &'a mut ControlContext,
         terminal: &'a mut Terminal,
         room: &'a mut ServerRoom,
-    ) -> Pin<Box<dyn Future<Output = Option<Box<dyn ControlHandler>>> + Send + 'a>>;
+    ) -> Option<Box<dyn ControlHandler>>;
 }
