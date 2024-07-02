@@ -296,7 +296,7 @@ impl WorkflowHandler for CommandExecutor {
                 let user = member.user.clone();
                 let message = message::System::new(
                     user,
-                    format!("Supported themes: {}", Theme::all().join(", ")),
+                    format!("Supported themes: {}", Theme::strings().join(", ")),
                 );
                 room.send_message(message.into()).await;
             }

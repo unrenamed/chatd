@@ -240,7 +240,7 @@ impl FromStr for Command {
                     Ok(parsed_theme) => Ok(Command::Theme(parsed_theme)),
                     Err(_) => Err(Self::Err::Custom(format!(
                         "theme value must be one of: {}",
-                        Theme::all().join(", ")
+                        Theme::strings().join(", ")
                     ))),
                 },
                 None => unreachable!(), // splitn returns [""] for an empty input

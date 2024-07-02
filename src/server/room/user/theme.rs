@@ -51,10 +51,14 @@ pub enum Theme {
 }
 
 impl Theme {
-    pub fn all() -> Vec<String> {
+    pub fn strings() -> Vec<String> {
         Theme::iter()
             .map(|t| t.to_string())
             .collect::<Vec<String>>()
+    }
+
+    pub fn from_prefix(prefix: &str) -> Option<Theme> {
+        Theme::iter().find(|theme| theme.to_string().starts_with(prefix))
     }
 }
 

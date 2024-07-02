@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use super::handler::WorkflowHandler;
 use super::WorkflowContext;
 
+use crate::server::room::{Command, Theme, TimestampMode};
 use crate::server::terminal::Terminal;
 use crate::server::ServerRoom;
 
@@ -27,28 +28,38 @@ impl WorkflowHandler for Autocomplete {
 
         let mut iter = input_str.splitn(3, ' ');
         let cmd = iter.next().unwrap_or(&input_str);
-        let name = iter.next().unwrap_or("").trim();
+        let arg1 = iter.next().unwrap_or("").trim();
+
+        let completed_cmd = if let Some(cmd) = room.commands().from_prefix(&cmd) {
+            cmd
+        } else {
+            return;
+        };
 
         let cmd_end_pos = cmd.len();
-        let name_end_pos = cmd_end_pos + name.len() + 1;
+        let arg1_end_pos = cmd_end_pos + arg1.len() + 1;
         let cursor_pos = terminal.input.cursor_byte_pos();
 
-        if cmd.starts_with("/") && cursor_pos > 0 && cursor_pos <= cmd_end_pos {
-            let completed = room.commands().from_prefix(&cmd);
-            if let Some(command) = completed {
-                let cmd_bytes = command.cmd().as_bytes();
-                terminal.input.move_cursor_to(cmd_end_pos);
+        if cursor_pos > 0 && cursor_pos <= cmd_end_pos {
+            let cmd_bytes = completed_cmd.cmd().as_bytes();
+            terminal.input.move_cursor_to(cmd_end_pos);
+            terminal.input.remove_last_word_before_cursor();
+            terminal.input.insert_before_cursor(cmd_bytes);
+            terminal.print_input_line().unwrap();
+        } else if !arg1.is_empty() && cursor_pos > cmd_end_pos + 1 && cursor_pos <= arg1_end_pos {
+            let completed_arg = match completed_cmd {
+                Command::Timestamp(_) => TimestampMode::from_prefix(arg1).map(|m| m.to_string()),
+                Command::Theme(_) => Theme::from_prefix(arg1).map(|t| t.to_string()),
+                cmd if cmd.args().starts_with("<user>") || cmd.args().starts_with("[user]") => {
+                    room.find_name_by_prefix(arg1, &context.user.username)
+                }
+                _ => None,
+            };
+
+            if let Some(arg) = completed_arg {
+                terminal.input.move_cursor_to(arg1_end_pos);
                 terminal.input.remove_last_word_before_cursor();
-                terminal.input.insert_before_cursor(cmd_bytes);
-                terminal.print_input_line().unwrap();
-            }
-        } else if !name.is_empty() && cursor_pos > cmd_end_pos + 1 && cursor_pos <= name_end_pos {
-            let completed = room.find_name_by_prefix(name, &context.user.username);
-            if let Some(username) = completed {
-                let name_bytes = username.as_bytes();
-                terminal.input.move_cursor_to(name_end_pos);
-                terminal.input.remove_last_word_before_cursor();
-                terminal.input.insert_before_cursor(name_bytes);
+                terminal.input.insert_before_cursor(arg.as_bytes());
                 terminal.print_input_line().unwrap();
             }
         }
