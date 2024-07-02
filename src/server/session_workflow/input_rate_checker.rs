@@ -29,12 +29,14 @@ impl WorkflowHandler for InputRateChecker {
         terminal: &mut Terminal,
         room: &mut ServerRoom,
     ) {
-        let error = format!(
-            "User {} MUST have a rate-limit within a server room",
+        let no_ratelim_error_msg = format!(
+            "User {} should have its own rate-limit in the server room",
             context.user.username
         );
 
-        let rl = room.get_ratelimit(context.user.id).expect(error.as_str());
+        let rl = room
+            .get_ratelimit(context.user.id)
+            .expect(no_ratelim_error_msg.as_str());
 
         if let Err(remaining) = ratelimit::check(rl) {
             let body = format!(

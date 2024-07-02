@@ -283,26 +283,26 @@ impl ServerRoom {
         None
     }
 
+    pub fn is_room_member(&self, username: &str) -> bool {
+        self.members.contains_key(username)
+    }
+
     pub fn find_member(&self, username: &str) -> &RoomMember {
         self.members
             .get(username)
-            .expect(format!("User {username} MUST have an member within a server room").as_str())
+            .expect(format!("User {username} should be a member of the server room").as_str())
     }
 
     pub fn find_member_mut(&mut self, username: &str) -> &mut RoomMember {
         self.members
             .get_mut(username)
-            .expect(format!("User {username} MUST have an member within a server room").as_str())
-    }
-
-    pub fn is_room_member(&self, username: &str) -> bool {
-        self.members.contains_key(username)
+            .expect(format!("User {username} should be a member of the server room").as_str())
     }
 
     pub fn find_member_by_id(&mut self, user_id: UserId) -> &RoomMember {
         self.try_get_name(&user_id)
             .and_then(|name| self.try_find_member(name))
-            .expect(format!("User {user_id} MUST have an member within a server room").as_str())
+            .expect(format!("User {user_id} should be a member of the server room").as_str())
     }
 
     pub fn try_find_member(&self, username: &str) -> Option<&RoomMember> {
