@@ -1,8 +1,6 @@
-use std::{
-    fs::File,
-    io::{BufRead, BufReader, Read},
-    path::PathBuf,
-};
+use std::fs::File;
+use std::io::{BufRead, BufReader, Read};
+use std::path::PathBuf;
 
 /// Reads the contents of a file into a string.
 pub fn read_file_to_string(file_path: &str) -> Result<String, std::io::Error> {
