@@ -62,7 +62,7 @@ pub enum Command {
 
     #[strum(props(
         Cmd = "/timestamp",
-        Args = "<time|datetime>",
+        Args = "<time|datetime|off>",
         Help = "Prefix messages with a UTC timestamp"
     ))]
     Timestamp(TimestampMode),
@@ -180,17 +180,17 @@ impl FromStr for Command {
             },
             b"/msg" => {
                 let mut iter = args.splitn(2, ' ');
-                let user = iter.next();
-                if user.is_none() || user.unwrap().is_empty() {
-                    return Err(Self::Err::ArgumentExpected(format!("user name")));
-                }
-                let body = iter.next();
-                if body.is_none() || body.unwrap().is_empty() {
-                    return Err(Self::Err::ArgumentExpected(format!("message body")));
+                let user = match iter.next() {
+                    Some(user) if !user.is_empty() => user.to_string(),
+                    _ => return Err(Self::Err::ArgumentExpected(format!("user name"))),
+                };
+                let body = match iter.next() {
+                    Some(body) if !body.is_empty() => body.trim_start().to_string(),
+                    _ => return Err(Self::Err::ArgumentExpected(format!("message body"))),
                 };
                 Ok(Command::Msg(
-                    user.unwrap().to_string(),
-                    body.unwrap().trim_start().to_string(),
+                    user.to_string(),
+                    body.trim_start().to_string(),
                 ))
             }
             b"/reply" => {
@@ -223,9 +223,12 @@ impl FromStr for Command {
                     "timestamp value must be one of: time, datetime, off".to_string(),
                 )),
                 Some(mode) => match mode {
-                    "time" | "datetime" | "off" => {
-                        Ok(Command::Timestamp(TimestampMode::from_str(mode).unwrap()))
-                    }
+                    "time" | "datetime" | "off" => match mode.parse::<TimestampMode>() {
+                        Ok(parsed_mode) => Ok(Command::Timestamp(parsed_mode)),
+                        Err(_) => Err(Self::Err::Custom(
+                            "failed to parse timestamp mode".to_string(),
+                        )),
+                    },
                     _ => Err(Self::Err::Custom(
                         "timestamp value must be one of: time, datetime, off".to_string(),
                     )),
@@ -233,21 +236,13 @@ impl FromStr for Command {
                 None => unreachable!(), // splitn returns [""] for an empty input
             },
             b"/theme" => match args.splitn(2, ' ').nth(0) {
-                Some(theme) if theme.is_empty() => Err(Self::Err::Custom(format!(
-                    "theme value must be one of: {}",
-                    Theme::all().join(", ")
-                ))),
-                Some(theme) => {
-                    let supported_themes = Theme::all();
-                    if supported_themes.contains(&theme.to_string()) {
-                        Ok(Command::Theme(Theme::from_str(theme).unwrap()))
-                    } else {
-                        Err(Self::Err::Custom(format!(
-                            "theme value must be one of: {}",
-                            Theme::all().join(", ")
-                        )))
-                    }
-                }
+                Some(theme) => match theme.parse::<Theme>() {
+                    Ok(parsed_theme) => Ok(Command::Theme(parsed_theme)),
+                    Err(_) => Err(Self::Err::Custom(format!(
+                        "theme value must be one of: {}",
+                        Theme::all().join(", ")
+                    ))),
+                },
                 None => unreachable!(), // splitn returns [""] for an empty input
             },
             b"/themes" => Ok(Command::Themes),
@@ -379,7 +374,7 @@ impl CommandCollection {
                 cmd.help(),
                 if idx == count - 1 { "" } else { utils::NEWLINE }
             )
-            .unwrap();
+            .expect(format!("Failed to write {:?} to commands string", cmd).as_str());
         }
 
         result
