@@ -60,7 +60,7 @@ impl Terminal {
         self.prompt_display_width = display_width(&self.prompt) as u16;
     }
 
-    pub fn clear_input(&mut self) -> Result<(), anyhow::Error> {
+    pub fn clear_input(&mut self) -> anyhow::Result<()> {
         self.input.clear();
         self.print_input_line()?;
         Ok(())
@@ -70,7 +70,7 @@ impl Terminal {
         self.handle.close();
     }
 
-    pub fn print_input_line(&mut self) -> Result<(), anyhow::Error> {
+    pub fn print_input_line(&mut self) -> anyhow::Result<()> {
         self.queue_prompt_cleanup()?;
         self.queue_write_prompt()?;
         self.queue_write_input()?;
@@ -80,7 +80,7 @@ impl Terminal {
         Ok(())
     }
 
-    pub fn print_message(&mut self, msg: &str) -> Result<(), anyhow::Error> {
+    pub fn print_message(&mut self, msg: &str) -> anyhow::Result<()> {
         self.queue_prompt_cleanup()?;
         self.queue_write_message(msg)?;
         self.queue_write_prompt()?;
@@ -91,7 +91,7 @@ impl Terminal {
         Ok(())
     }
 
-    fn queue_prompt_cleanup(&mut self) -> Result<(), anyhow::Error> {
+    fn queue_prompt_cleanup(&mut self) -> anyhow::Result<()> {
         if self.cursor_y < self.input_end_y {
             queue!(
                 self.handle,
@@ -121,24 +121,24 @@ impl Terminal {
         Ok(())
     }
 
-    fn queue_write_message(&mut self, msg: &str) -> Result<(), anyhow::Error> {
+    fn queue_write_message(&mut self, msg: &str) -> anyhow::Result<()> {
         queue!(self.handle, style::Print(msg), style::Print(utils::NEWLINE))?;
         Ok(())
     }
 
-    fn queue_write_prompt(&mut self) -> Result<(), anyhow::Error> {
+    fn queue_write_prompt(&mut self) -> anyhow::Result<()> {
         queue!(self.handle, style::Print(&self.prompt))?;
         self.advance_cursor_pos(self.prompt_display_width);
         Ok(())
     }
 
-    fn queue_write_input(&mut self) -> Result<(), anyhow::Error> {
+    fn queue_write_input(&mut self) -> anyhow::Result<()> {
         queue!(self.handle, style::Print(&self.input))?;
         self.advance_cursor_pos(self.input.display_width() as u16);
         Ok(())
     }
 
-    fn queue_write_outbuff(&mut self) -> Result<(), anyhow::Error> {
+    fn queue_write_outbuff(&mut self) -> anyhow::Result<()> {
         queue!(
             self.handle,
             style::Print(String::from_utf8_lossy(&self.outbuff))
@@ -147,7 +147,7 @@ impl Terminal {
         Ok(())
     }
 
-    fn queue_move_cursor(&mut self) -> Result<(), anyhow::Error> {
+    fn queue_move_cursor(&mut self) -> anyhow::Result<()> {
         if self.term_width == 0 {
             return Ok(());
         }

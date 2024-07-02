@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Ok;
-use log::info;
+use log::{error, info};
 use russh::server::Auth;
 use russh::server::Handler;
 use russh::server::Msg;
@@ -12,7 +12,6 @@ use russh::ChannelId;
 use russh::MethodSet;
 use russh::Pty;
 use russh_keys::key::PublicKey;
-use tokio::spawn;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 
@@ -76,19 +75,19 @@ impl Handler for ThinHandler {
             None => false,
         };
 
-        spawn(async move {
-            sender
-                .send(SessionRepositoryEvent::NewSession(
-                    id,
-                    ssh_id,
-                    connect_username,
-                    is_op,
-                    key,
-                    terminal_handle,
-                    session_event_rx,
-                ))
-                .await
-                .unwrap();
+        tokio::spawn(async move {
+            let event = SessionRepositoryEvent::NewSession(
+                id,
+                ssh_id,
+                connect_username,
+                is_op,
+                key,
+                terminal_handle,
+                session_event_rx,
+            );
+            if let Err(err) = sender.send(event).await {
+                error!("Failed to send NewSession event for channel {id}: {err}");
+            }
         });
 
         Ok(true)
@@ -174,7 +173,9 @@ impl Handler for ThinHandler {
             .expect("Session event sender to be initialized during session creation");
 
         tokio::spawn(async move {
-            sender.send(SessionEvent::Data(data)).await.unwrap();
+            if let Err(err) = sender.send(SessionEvent::Data(data)).await {
+                error!("Failed to send Data event for channel {channel}: {err}");
+            }
         });
 
         Ok(())
@@ -198,13 +199,10 @@ impl Handler for ThinHandler {
             .expect("Session event sender to be initialized during session creation");
 
         tokio::spawn(async move {
-            sender
-                .send(SessionEvent::WindowResize(
-                    col_width as u16,
-                    row_height as u16,
-                ))
-                .await
-                .unwrap();
+            let event = SessionEvent::WindowResize(col_width as u16, row_height as u16);
+            if let Err(err) = sender.send(event).await {
+                error!("Failed to send WindowResize event for channel {channel}: {err}");
+            }
         });
 
         Ok(())
@@ -226,13 +224,10 @@ impl Handler for ThinHandler {
             .expect("Session event sender to be initialized during session creation");
 
         tokio::spawn(async move {
-            sender
-                .send(SessionEvent::WindowResize(
-                    col_width as u16,
-                    row_height as u16,
-                ))
-                .await
-                .unwrap();
+            let event = SessionEvent::WindowResize(col_width as u16, row_height as u16);
+            if let Err(err) = sender.send(event).await {
+                error!("Failed to send WindowResize event for channel {channel}: {err}");
+            }
         });
 
         Ok(())
@@ -255,7 +250,10 @@ impl Handler for ThinHandler {
             .expect("Session event sender to be initialized during session creation");
 
         tokio::spawn(async move {
-            sender.send(SessionEvent::Env(name, value)).await.unwrap();
+            let event = SessionEvent::Env(name, value);
+            if let Err(err) = sender.send(event).await {
+                error!("Failed to send Env event for channel {channel}: {err}");
+            }
         });
 
         Ok(())
@@ -275,8 +273,11 @@ impl Drop for ThinHandler {
         if let Some(sender) = &self.session_event_sender {
             info!("Clean up from disconnected session id={}", self.id);
             let sender = sender.clone();
+            let channel = self.id;
             tokio::spawn(async move {
-                sender.send(SessionEvent::Disconnect).await.unwrap();
+                if let Err(err) = sender.send(SessionEvent::Disconnect).await {
+                    error!("Failed to send Disconnect event for channel {channel}: {err}");
+                }
             });
         }
     }

@@ -20,20 +20,19 @@ impl WorkflowHandler for Autocomplete {
         context: &mut WorkflowContext,
         terminal: &mut Terminal,
         room: &mut ServerRoom,
-    ) {
+    ) -> anyhow::Result<()> {
         let input_str = terminal.input.to_string();
         if input_str.trim().is_empty() {
-            return;
+            return Ok(());
         }
 
         let mut iter = input_str.splitn(3, ' ');
         let cmd = iter.next().unwrap_or(&input_str);
         let arg1 = iter.next().unwrap_or("").trim();
 
-        let completed_cmd = if let Some(cmd) = room.commands().from_prefix(&cmd) {
-            cmd
-        } else {
-            return;
+        let completed_cmd = match room.commands().from_prefix(&cmd) {
+            Some(cmd) => cmd,
+            None => return Ok(()),
         };
 
         let cmd_end_pos = cmd.len();
@@ -45,7 +44,7 @@ impl WorkflowHandler for Autocomplete {
             terminal.input.move_cursor_to(cmd_end_pos);
             terminal.input.remove_last_word_before_cursor();
             terminal.input.insert_before_cursor(cmd_bytes);
-            terminal.print_input_line().unwrap();
+            terminal.print_input_line()?;
         } else if !arg1.is_empty() && cursor_pos > cmd_end_pos + 1 && cursor_pos <= arg1_end_pos {
             let completed_arg = match completed_cmd {
                 Command::Timestamp(_) => TimestampMode::from_prefix(arg1).map(|m| m.to_string()),
@@ -60,9 +59,11 @@ impl WorkflowHandler for Autocomplete {
                 terminal.input.move_cursor_to(arg1_end_pos);
                 terminal.input.remove_last_word_before_cursor();
                 terminal.input.insert_before_cursor(arg.as_bytes());
-                terminal.print_input_line().unwrap();
+                terminal.print_input_line()?;
             }
         }
+
+        Ok(())
     }
 
     fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler>> {

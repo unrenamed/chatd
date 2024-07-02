@@ -13,11 +13,13 @@ pub trait WorkflowHandler: Send + Sync {
         context: &mut WorkflowContext,
         terminal: &mut Terminal,
         room: &mut ServerRoom,
-    ) {
-        self.handle(context, terminal, room).await;
-
-        if let Some(next) = &mut self.next() {
-            next.execute(context, terminal, room).await;
+    ) -> anyhow::Result<()> {
+        match self.handle(context, terminal, room).await {
+            Ok(_) => match &mut self.next() {
+                Some(next) => next.execute(context, terminal, room).await,
+                None => Ok(()),
+            },
+            Err(err) => Err(err),
         }
     }
 
@@ -26,7 +28,7 @@ pub trait WorkflowHandler: Send + Sync {
         context: &mut WorkflowContext,
         terminal: &mut Terminal,
         room: &mut ServerRoom,
-    );
+    ) -> anyhow::Result<()>;
 
     fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler>>;
 }

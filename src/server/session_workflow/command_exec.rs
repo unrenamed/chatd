@@ -23,9 +23,9 @@ impl WorkflowHandler for CommandExecutor {
         context: &mut WorkflowContext,
         terminal: &mut Terminal,
         room: &mut ServerRoom,
-    ) {
+    ) -> anyhow::Result<()> {
         if context.command.is_none() {
-            return;
+            return Ok(());
         }
 
         let username = &context.user.username;
@@ -35,7 +35,6 @@ impl WorkflowHandler for CommandExecutor {
         match command {
             Command::Exit => {
                 terminal.exit();
-                return;
             }
             Command::Away(reason) => {
                 let member = room.find_member_mut(username);
@@ -45,7 +44,7 @@ impl WorkflowHandler for CommandExecutor {
                     member.user.clone(),
                     format!("has gone away: \"{}\"", reason),
                 );
-                room.send_message(message.into()).await;
+                room.send_message(message.into()).await?;
             }
             Command::Back => {
                 let member = room.find_member_mut(username);
@@ -56,7 +55,7 @@ impl WorkflowHandler for CommandExecutor {
                 {
                     member.user.return_active();
                     let message = message::Emote::new(member.user.clone(), "is back".to_string());
-                    room.send_message(message.into()).await;
+                    room.send_message(message.into()).await?;
                 }
             }
             Command::Name(new_name) => 'label: {
@@ -68,7 +67,7 @@ impl WorkflowHandler for CommandExecutor {
                         user,
                         "new name is the same as the original".to_string(),
                     );
-                    room.send_message(message.into()).await;
+                    room.send_message(message.into()).await?;
                     break 'label;
                 }
 
@@ -77,7 +76,7 @@ impl WorkflowHandler for CommandExecutor {
                         user,
                         format!("\"{}\" name is already taken", new_name),
                     );
-                    room.send_message(message.into()).await;
+                    room.send_message(message.into()).await?;
                     break 'label;
                 }
 
@@ -85,7 +84,7 @@ impl WorkflowHandler for CommandExecutor {
                     user.clone(),
                     format!("user is now known as {}.", new_name),
                 );
-                room.send_message(message.into()).await;
+                room.send_message(message.into()).await?;
 
                 let new_name = new_name.to_string();
                 let old_name = user.username;
@@ -107,7 +106,7 @@ impl WorkflowHandler for CommandExecutor {
                     None => {
                         let message =
                             message::Error::new(from.clone(), format!("user is not found"));
-                        room.send_message(message.into()).await;
+                        room.send_message(message.into()).await?;
                         break 'label;
                     }
                     Some(to) if from.id.eq(&to.id) => {
@@ -115,7 +114,7 @@ impl WorkflowHandler for CommandExecutor {
                             from.clone(),
                             format!("you can't message yourself"),
                         );
-                        room.send_message(message.into()).await;
+                        room.send_message(message.into()).await?;
                         break 'label;
                     }
                     Some(to) => {
@@ -126,7 +125,7 @@ impl WorkflowHandler for CommandExecutor {
 
                         let message =
                             message::Private::new(from.clone(), to.clone(), msg.to_string());
-                        room.send_message(message.into()).await;
+                        room.send_message(message.into()).await?;
 
                         match status {
                             UserStatus::Away { reason, since: _ } => {
@@ -137,7 +136,7 @@ impl WorkflowHandler for CommandExecutor {
                                         name, reason
                                     ),
                                 );
-                                room.send_message(message.into()).await;
+                                room.send_message(message.into()).await?;
                             }
                             UserStatus::Active => {}
                         }
@@ -151,7 +150,7 @@ impl WorkflowHandler for CommandExecutor {
                 if from.reply_to.is_none() {
                     let message =
                         message::Error::new(from.clone(), "no message to reply to".to_string());
-                    room.send_message(message.into()).await;
+                    room.send_message(message.into()).await?;
                     break 'label;
                 }
 
@@ -160,14 +159,14 @@ impl WorkflowHandler for CommandExecutor {
                 if target_name.is_none() {
                     let message =
                         message::Error::new(from.clone(), "user already left the room".to_string());
-                    room.send_message(message.into()).await;
+                    room.send_message(message.into()).await?;
                     break 'label;
                 }
 
                 let member = room.find_member(target_name.unwrap());
                 let to = member.user.clone();
                 let message = message::Private::new(from, to, message_body);
-                room.send_message(message.into()).await;
+                room.send_message(message.into()).await?;
             }
             Command::Users => {
                 let member = room.find_member(username);
@@ -188,7 +187,7 @@ impl WorkflowHandler for CommandExecutor {
                 );
 
                 let message = message::System::new(user, body);
-                room.send_message(message.into()).await;
+                room.send_message(message.into()).await?;
             }
             Command::Whois(target_name) => {
                 let member = room.find_member(username);
@@ -200,7 +199,7 @@ impl WorkflowHandler for CommandExecutor {
                     Some(target) => message::System::new(user, target.to_string()).into(),
                     None => message::Error::new(user, "user not found".to_string()).into(),
                 };
-                room.send_message(message).await;
+                room.send_message(message).await?;
             }
             Command::Slap(target_name) => 'label: {
                 let member = room.find_member(username);
@@ -211,7 +210,7 @@ impl WorkflowHandler for CommandExecutor {
                         user,
                         "hits himself with a squishy banana.".to_string(),
                     );
-                    room.send_message(message.into()).await;
+                    room.send_message(message.into()).await?;
                     break 'label;
                 }
 
@@ -227,13 +226,13 @@ impl WorkflowHandler for CommandExecutor {
                     message::Error::new(user, "that slippin' monkey not in the room".to_string())
                         .into()
                 };
-                room.send_message(message).await;
+                room.send_message(message).await?;
             }
             Command::Shrug => {
                 let member = room.find_member(username);
                 let user = member.user.clone();
                 let message = message::Emote::new(user, "¯\\_(◕‿◕)_/¯".to_string());
-                room.send_message(message.into()).await;
+                room.send_message(message.into()).await?;
             }
             Command::Me(action) => {
                 let member = room.find_member(username);
@@ -245,7 +244,7 @@ impl WorkflowHandler for CommandExecutor {
                         None => format!("is at a loss for words."),
                     },
                 );
-                room.send_message(message.into()).await;
+                room.send_message(message.into()).await?;
             }
             Command::Help => {
                 let member = room.find_member(username);
@@ -253,7 +252,7 @@ impl WorkflowHandler for CommandExecutor {
 
                 let message =
                     message::System::new(user.clone(), room.commands().to_string(user.is_op));
-                room.send_message(message.into()).await;
+                room.send_message(message.into()).await?;
             }
             Command::Quiet => {
                 let member = room.find_member_mut(username);
@@ -266,7 +265,7 @@ impl WorkflowHandler for CommandExecutor {
                     }
                     .to_string(),
                 );
-                room.send_message(message.into()).await;
+                room.send_message(message.into()).await?;
             }
             Command::Timestamp(mode) => {
                 let member = room.find_member_mut(username);
@@ -281,7 +280,7 @@ impl WorkflowHandler for CommandExecutor {
                     }
                     .to_string(),
                 );
-                room.send_message(message.into()).await;
+                room.send_message(message.into()).await?;
             }
             Command::Theme(theme) => {
                 let member = room.find_member_mut(username);
@@ -289,7 +288,7 @@ impl WorkflowHandler for CommandExecutor {
 
                 member.user.theme = theme.into();
                 terminal.set_prompt(&terminal.get_prompt(&member.user));
-                room.send_message(message.into()).await;
+                room.send_message(message.into()).await?;
             }
             Command::Themes => {
                 let member = room.find_member(username);
@@ -298,7 +297,7 @@ impl WorkflowHandler for CommandExecutor {
                     user,
                     format!("Supported themes: {}", Theme::strings().join(", ")),
                 );
-                room.send_message(message.into()).await;
+                room.send_message(message.into()).await?;
             }
             Command::Ignore(target) => 'label: {
                 let member = room.find_member(username);
@@ -322,7 +321,7 @@ impl WorkflowHandler for CommandExecutor {
                     };
 
                     let message = message::System::new(user, message_text);
-                    room.send_message(message.into()).await;
+                    room.send_message(message.into()).await?;
                     break 'label;
                 }
 
@@ -336,7 +335,7 @@ impl WorkflowHandler for CommandExecutor {
                             user.clone(),
                             "you can't ignore yourself".to_string(),
                         );
-                        room.send_message(message.into()).await;
+                        room.send_message(message.into()).await?;
                         break 'label;
                     }
                     Some(target_id) if user.ignored.contains(&target_id) => {
@@ -344,13 +343,13 @@ impl WorkflowHandler for CommandExecutor {
                             user.clone(),
                             format!("user already in the ignored list"),
                         );
-                        room.send_message(message.into()).await;
+                        room.send_message(message.into()).await?;
                         break 'label;
                     }
                     None => {
                         let message =
                             message::Error::new(user.clone(), "user not found".to_string());
-                        room.send_message(message.into()).await;
+                        room.send_message(message.into()).await?;
                         break 'label;
                     }
                     Some(target_id) => {
@@ -360,7 +359,7 @@ impl WorkflowHandler for CommandExecutor {
                             .insert(target_id);
                         let message =
                             message::System::new(user, format!("Ignoring: {}", target_username));
-                        room.send_message(message.into()).await;
+                        room.send_message(message.into()).await?;
                     }
                 }
             }
@@ -375,7 +374,7 @@ impl WorkflowHandler for CommandExecutor {
                     None => {
                         let message =
                             message::Error::new(user.clone(), "user not found".to_string());
-                        room.send_message(message.into()).await;
+                        room.send_message(message.into()).await?;
                         break 'label;
                     }
                     Some(target_id) if !user.ignored.contains(&target_id) => {
@@ -383,7 +382,7 @@ impl WorkflowHandler for CommandExecutor {
                             user.clone(),
                             "user not in the ignored list yet".to_string(),
                         );
-                        room.send_message(message.into()).await;
+                        room.send_message(message.into()).await?;
                         break 'label;
                     }
                     Some(target_id) => {
@@ -395,7 +394,7 @@ impl WorkflowHandler for CommandExecutor {
                             user,
                             format!("No longer ignoring: {}", target_username),
                         );
-                        room.send_message(message.into()).await;
+                        room.send_message(message.into()).await?;
                     }
                 }
             }
@@ -421,7 +420,7 @@ impl WorkflowHandler for CommandExecutor {
                     };
 
                     let message = message::System::new(user, message_text);
-                    room.send_message(message.into()).await;
+                    room.send_message(message.into()).await?;
                     break 'label;
                 }
 
@@ -430,7 +429,7 @@ impl WorkflowHandler for CommandExecutor {
                     room.find_member_mut(username).user.focused.clear();
                     let message =
                         message::System::new(user, "Removed focus from all users".to_string());
-                    room.send_message(message.into()).await;
+                    room.send_message(message.into()).await?;
                     break 'label;
                 }
 
@@ -469,20 +468,20 @@ impl WorkflowHandler for CommandExecutor {
                 };
 
                 let message = message::System::new(user, message_text);
-                room.send_message(message.into()).await;
+                room.send_message(message.into()).await?;
             }
             Command::Version => {
                 let message = message::System::new(user, format!("{}", env!("CARGO_PKG_VERSION")));
-                room.send_message(message.into()).await;
+                room.send_message(message.into()).await?;
             }
             Command::Uptime => {
                 let message = message::System::new(user, room.uptime());
-                room.send_message(message.into()).await;
+                room.send_message(message.into()).await?;
             }
             Command::Mute(target_username) => 'label: {
                 if !user.is_op {
                     let message = message::Error::new(user, "must be an operator".to_string());
-                    room.send_message(message.into()).await;
+                    room.send_message(message.into()).await?;
                     break 'label;
                 }
 
@@ -492,13 +491,13 @@ impl WorkflowHandler for CommandExecutor {
                 {
                     None => {
                         let message = message::Error::new(user, "user not found".to_string());
-                        room.send_message(message.into()).await;
+                        room.send_message(message.into()).await?;
                         break 'label;
                     }
                     Some(target) if target.id == user.id => {
                         let message =
                             message::Error::new(user, "you can't mute yourself".to_string());
-                        room.send_message(message.into()).await;
+                        room.send_message(message.into()).await?;
                         break 'label;
                     }
                     Some(target) => {
@@ -516,14 +515,14 @@ impl WorkflowHandler for CommandExecutor {
                                 target.id
                             ),
                         );
-                        room.send_message(message.into()).await;
+                        room.send_message(message.into()).await?;
                     }
                 }
             }
             Command::Motd(new_motd) => 'label: {
                 if new_motd.is_none() {
                     let message = message::System::new(user, room.motd().clone());
-                    room.send_message(message.into()).await;
+                    room.send_message(message.into()).await?;
                     break 'label;
                 }
 
@@ -532,7 +531,7 @@ impl WorkflowHandler for CommandExecutor {
                         user,
                         "must be an operator to modify the MOTD".to_string(),
                     );
-                    room.send_message(message.into()).await;
+                    room.send_message(message.into()).await?;
                     break 'label;
                 }
 
@@ -546,19 +545,19 @@ impl WorkflowHandler for CommandExecutor {
                         room.motd()
                     ),
                 );
-                room.send_message(message.into()).await;
+                room.send_message(message.into()).await?;
             }
             Command::Kick(target_username) => 'label: {
                 if !user.is_op {
                     let message = message::Error::new(user, "must be an operator".to_string());
-                    room.send_message(message.into()).await;
+                    room.send_message(message.into()).await?;
                     break 'label;
                 }
 
                 match room.try_find_member_mut(&target_username) {
                     None => {
                         let message = message::Error::new(user, "user not found".to_string());
-                        room.send_message(message.into()).await;
+                        room.send_message(message.into()).await?;
                         break 'label;
                     }
                     Some(_) => {
@@ -568,21 +567,21 @@ impl WorkflowHandler for CommandExecutor {
                             user,
                             format!("kicked {} from the server", target_username),
                         );
-                        room.send_message(message.into()).await;
+                        room.send_message(message.into()).await?;
                     }
                 }
             }
             Command::Ban(query) => 'label: {
                 if !user.is_op {
                     let message = message::Error::new(user, "must be an operator".to_string());
-                    room.send_message(message.into()).await;
+                    room.send_message(message.into()).await?;
                     break 'label;
                 }
 
                 let query = query.parse::<BanQuery>();
                 if let Err(err) = query {
                     let message = message::Error::new(user, err.to_string());
-                    room.send_message(message.into()).await;
+                    room.send_message(message.into()).await?;
                     break 'label;
                 }
 
@@ -609,7 +608,7 @@ impl WorkflowHandler for CommandExecutor {
                             None => {
                                 let message =
                                     message::Error::new(user, "user not found".to_string());
-                                room.send_message(message.into()).await;
+                                room.send_message(message.into()).await?;
                                 break 'label;
                             }
                         }
@@ -666,13 +665,13 @@ impl WorkflowHandler for CommandExecutor {
                 messages.push(message.into());
 
                 for message in messages {
-                    room.send_message(message).await;
+                    room.send_message(message).await?;
                 }
             }
             Command::Banned => 'label: {
                 if !user.is_op {
                     let message = message::Error::new(user, "must be an operator".to_string());
-                    room.send_message(message.into()).await;
+                    room.send_message(message.into()).await?;
                     break 'label;
                 }
 
@@ -689,9 +688,11 @@ impl WorkflowHandler for CommandExecutor {
                 }
 
                 let message = message::System::new(user, String::from_utf8(buf).unwrap());
-                room.send_message(message.into()).await;
+                room.send_message(message.into()).await?;
             }
         }
+
+        Ok(())
     }
 
     fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler>> {

@@ -105,7 +105,7 @@ impl ServerRoom {
         key: Option<PublicKey>,
         ssh_id: String,
         tx: mpsc::Sender<String>,
-    ) -> User {
+    ) -> anyhow::Result<User> {
         let name = match self.is_room_member(&username) {
             true => User::gen_rand_name(),
             false => username,
@@ -126,9 +126,9 @@ impl ServerRoom {
             user.clone(),
             format!("joined. (Connected: {})", self.members.len()),
         );
-        self.send_message(message.into()).await;
+        self.send_message(message.into()).await?;
 
-        user
+        Ok(user)
     }
 
     pub async fn send_motd(&mut self, username: &UserName) {
@@ -148,18 +148,16 @@ impl ServerRoom {
         }
     }
 
-    pub async fn leave(&mut self, user_id: &UserId) {
-        let name = self.try_get_name(user_id);
-        if let None = name {
-            return;
-        }
+    pub async fn leave(&mut self, user_id: &UserId) -> anyhow::Result<()> {
+        let username = match self.try_get_name(user_id) {
+            Some(name) => name.clone(),
+            None => return Ok(()),
+        };
 
-        let username = name.unwrap().clone();
         let user = self.find_member(&username).user.clone();
-
         let duration = humantime::format_duration(user.joined_duration());
         let message = message::Announce::new(user, format!("left: (After {})", duration));
-        self.send_message(message.into()).await;
+        self.send_message(message.into()).await?;
 
         self.members.remove(&username);
         self.names.remove(user_id);
@@ -169,27 +167,29 @@ impl ServerRoom {
             member.user.ignored.remove(user_id);
             member.user.focused.remove(user_id);
         }
+
+        Ok(())
     }
 
-    pub async fn send_message(&mut self, msg: Message) {
+    pub async fn send_message(&mut self, msg: Message) -> anyhow::Result<()> {
         match msg {
             Message::System(ref m) => {
                 let member = self.find_member(&m.from.username);
-                member.send_message(msg).await.unwrap();
+                member.send_message(msg).await?;
             }
             Message::Command(ref m) => {
                 let member = self.find_member(&m.from.username);
-                member.send_message(msg).await.unwrap();
+                member.send_message(msg).await?;
             }
             Message::Error(ref m) => {
                 let member = self.find_member(&m.from.username);
-                member.send_message(msg).await.unwrap();
+                member.send_message(msg).await?;
             }
             Message::Public(ref m) => {
                 self.history.push(msg.clone());
                 for (_, member) in self.members.iter() {
                     if m.from.is_muted && member.user.id == m.from.id {
-                        member.send_user_is_muted_message().await.unwrap();
+                        member.send_user_is_muted_message().await?;
                     }
                     if m.from.is_muted {
                         continue;
@@ -210,7 +210,7 @@ impl ServerRoom {
                 self.history.push(msg.clone());
                 for (_, member) in self.members.iter() {
                     if m.from.is_muted && member.user.id == m.from.id {
-                        member.send_user_is_muted_message().await.unwrap();
+                        member.send_user_is_muted_message().await?;
                     }
                     if m.from.is_muted {
                         continue;
@@ -227,7 +227,7 @@ impl ServerRoom {
                 self.history.push(msg.clone());
                 for (_, member) in self.members.iter() {
                     if m.from.is_muted && member.user.id == m.from.id {
-                        member.send_user_is_muted_message().await.unwrap();
+                        member.send_user_is_muted_message().await?;
                     }
                     if m.from.is_muted {
                         continue;
@@ -247,18 +247,20 @@ impl ServerRoom {
                 let from = self.find_member(&m.from.username);
 
                 if m.from.is_muted {
-                    from.send_user_is_muted_message().await.unwrap();
-                    return;
+                    from.send_user_is_muted_message().await?;
+                    return Ok(());
                 }
 
-                from.send_message(msg.clone()).await.unwrap();
+                from.send_message(msg.clone()).await?;
 
                 let to = self.find_member(&m.to.username);
                 if !to.user.ignored.contains(&m.from.id) {
-                    to.send_message(msg).await.unwrap();
+                    to.send_message(msg).await?;
                 }
             }
         }
+
+        Ok(())
     }
 
     pub fn find_name_by_prefix(&self, prefix: &str, skip: &str) -> Option<String> {

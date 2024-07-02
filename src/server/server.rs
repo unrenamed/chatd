@@ -39,7 +39,7 @@ impl AppServer {
         }
     }
 
-    pub async fn run(&mut self, mut repository: SessionRepository) -> Result<(), anyhow::Error> {
+    pub async fn run(&mut self, mut repository: SessionRepository) -> anyhow::Result<()> {
         let room = self.room.clone();
 
         info!("Spawning a thread to wait for incoming sessions");

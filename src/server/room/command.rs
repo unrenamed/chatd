@@ -5,6 +5,27 @@ use fmt::Write;
 use std::{fmt, str::FromStr};
 use strum::{EnumCount, EnumIter, EnumProperty, IntoEnumIterator};
 
+#[derive(Debug, PartialEq)]
+pub enum CommandParseError {
+    NotRecognizedAsCommand,
+    UnknownCommand,
+    ArgumentExpected(String),
+    Custom(String),
+}
+
+impl fmt::Display for CommandParseError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            CommandParseError::NotRecognizedAsCommand => write!(f, "given input is not a command"),
+            CommandParseError::UnknownCommand => write!(f, "unknown command"),
+            CommandParseError::ArgumentExpected(arg) => write!(f, "{} is expected", arg),
+            CommandParseError::Custom(s) => write!(f, "{}", s),
+        }
+    }
+}
+
+impl std::error::Error for CommandParseError {}
+
 #[derive(Debug, Clone, PartialEq, EnumProperty, EnumIter, EnumCount)]
 pub enum Command {
     #[strum(props(Cmd = "/exit", Help = "Exit the chat application"))]
@@ -132,25 +153,6 @@ pub enum Command {
 
     #[strum(props(Cmd = "/uptime"))]
     Uptime,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum CommandParseError {
-    NotRecognizedAsCommand,
-    UnknownCommand,
-    ArgumentExpected(String),
-    Custom(String),
-}
-
-impl fmt::Display for CommandParseError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            CommandParseError::NotRecognizedAsCommand => write!(f, "given input is not a command"),
-            CommandParseError::UnknownCommand => write!(f, "unknown command"),
-            CommandParseError::ArgumentExpected(arg) => write!(f, "{} is expected", arg),
-            CommandParseError::Custom(s) => write!(f, "{}", s),
-        }
-    }
 }
 
 impl FromStr for Command {

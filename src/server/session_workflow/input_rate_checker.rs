@@ -28,7 +28,7 @@ impl WorkflowHandler for InputRateChecker {
         context: &mut WorkflowContext,
         terminal: &mut Terminal,
         room: &mut ServerRoom,
-    ) {
+    ) -> anyhow::Result<()> {
         let no_ratelim_error_msg = format!(
             "User {} should have its own rate-limit in the server room",
             context.user.username
@@ -44,9 +44,11 @@ impl WorkflowHandler for InputRateChecker {
                 humantime::format_duration(remaining)
             );
             let message = message::Error::new(context.user.clone(), body);
-            room.send_message(message.into()).await;
+            room.send_message(message.into()).await?;
             self.next = None;
         }
+
+        Ok(())
     }
 
     fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler>> {

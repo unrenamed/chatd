@@ -30,40 +30,42 @@ impl WorkflowHandler for CommandParser {
         context: &mut WorkflowContext,
         terminal: &mut Terminal,
         room: &mut ServerRoom,
-    ) {
+    ) -> anyhow::Result<()> {
         let user = context.user.clone();
 
-        if context.command_str.is_none() {
-            return;
-        }
+        let command_str = if let Some(str) = &context.command_str {
+            str
+        } else {
+            return Ok(());
+        };
 
-        let command_str = context.command_str.as_ref().unwrap();
         let input_str = terminal.input.to_string();
 
         match command_str.parse::<Command>() {
             Err(err) if err == CommandParseError::NotRecognizedAsCommand => {
-                terminal.clear_input().unwrap();
+                terminal.clear_input()?;
                 room.find_member_mut(&user.username)
                     .update_last_sent_time(Utc::now());
                 let message = message::Public::new(user, input_str);
-                room.send_message(message.into()).await;
+                room.send_message(message.into()).await?;
             }
             Err(err) => {
                 terminal.input.push_to_history();
-                terminal.clear_input().unwrap();
+                terminal.clear_input()?;
                 let message = message::Command::new(user.clone(), input_str);
-                room.send_message(message.into()).await;
+                room.send_message(message.into()).await?;
                 let message = message::Error::new(user, format!("{}", err));
-                room.send_message(message.into()).await;
+                room.send_message(message.into()).await?;
             }
             Ok(command) => {
                 terminal.input.push_to_history();
-                terminal.clear_input().unwrap();
+                terminal.clear_input()?;
                 let message = message::Command::new(user.clone(), input_str);
-                room.send_message(message.into()).await;
+                room.send_message(message.into()).await?;
                 context.command = Some(command);
             }
         }
+        Ok(())
     }
 
     fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler>> {

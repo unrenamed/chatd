@@ -31,7 +31,7 @@ impl WorkflowHandler for EnvParser {
         context: &mut WorkflowContext,
         terminal: &mut Terminal,
         room: &mut ServerRoom,
-    ) {
+    ) -> anyhow::Result<()> {
         let env = match format!("{}={}", self.name, self.value).parse::<Env>() {
             Ok(env) => Some(env),
             Err(_) => None,
@@ -44,6 +44,8 @@ impl WorkflowHandler for EnvParser {
             };
             context.command_str = Some(command_str);
         }
+
+        Ok(())
     }
 
     fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler>> {

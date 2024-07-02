@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use russh_keys::key::PublicKey;
 use terminal_keycode::KeyCode;
 use tokio::spawn;
@@ -84,8 +84,11 @@ impl SessionRepository {
                     spawn(async move {
                         {
                             let mut room = room.lock().await;
-                            let user = room.join(id, username, is_op, pk, ssh_id, message_tx).await;
-                            terminal.set_prompt(&terminal.get_prompt(&user));
+                            if let Ok(user) =
+                                room.join(id, username, is_op, pk, ssh_id, message_tx).await
+                            {
+                                terminal.set_prompt(&terminal.get_prompt(&user));
+                            }
                         }
                         Self::handle_session(id, room, terminal, event_rx, message_rx).await;
                     });
@@ -148,18 +151,39 @@ impl SessionRepository {
                         match code {
                             KeyCode::Tab => {
                                 let mut autocomplete = Autocomplete::default();
-                                autocomplete.execute(&mut ctx, &mut term, &mut room).await;
+                                if let Err(err) =
+                                    autocomplete.execute(&mut ctx, &mut term, &mut room).await
+                                {
+                                    error!(
+                                        "Failed to execute autocomplete workflow for user {}: {}",
+                                        id, err
+                                    );
+                                }
                             }
                             KeyCode::Enter => {
                                 let command_executor = CommandExecutor::default();
                                 let command_parser = CommandParser::new(command_executor);
                                 let input_validator = InputValidator::new(command_parser);
                                 let mut rate_checker = InputRateChecker::new(input_validator);
-                                rate_checker.execute(&mut ctx, &mut term, &mut room).await;
+                                if let Err(err) =
+                                    rate_checker.execute(&mut ctx, &mut term, &mut room).await
+                                {
+                                    error!(
+                                        "Failed to execute command workflow for user {}: {}",
+                                        id, err
+                                    );
+                                }
                             }
                             _ => {
                                 let mut key_mapper = TerminalKeyMapper::new(code);
-                                key_mapper.execute(&mut ctx, &mut term, &mut room).await;
+                                if let Err(err) =
+                                    key_mapper.execute(&mut ctx, &mut term, &mut room).await
+                                {
+                                    error!(
+                                        "Failed to execute terminal workflow for user {}: {}",
+                                        id, err
+                                    );
+                                }
                             }
                         }
                     }
@@ -174,11 +198,15 @@ impl SessionRepository {
                     let command_executor = CommandExecutor::default();
                     let command_parser = CommandParser::new(command_executor);
                     let mut env_parser = EnvParser::new(name, value, command_parser);
-                    env_parser.execute(&mut ctx, &mut term, &mut room).await;
+                    if let Err(err) = env_parser.execute(&mut ctx, &mut term, &mut room).await {
+                        error!("Failed to execute env workflow for user {}: {}", id, err);
+                    }
                 }
                 SessionEvent::Disconnect => {
                     let mut room = room.lock().await;
-                    room.leave(&id).await;
+                    if let Err(err) = room.leave(&id).await {
+                        error!("Failed to disconnect user {} from the server: {}", id, err);
+                    }
                     let _ = exit_tx.send(());
                     info!("Session events processing task for id={id} is finished");
                     return;

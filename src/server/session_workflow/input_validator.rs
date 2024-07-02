@@ -30,10 +30,11 @@ impl WorkflowHandler for InputValidator {
         context: &mut WorkflowContext,
         terminal: &mut Terminal,
         room: &mut ServerRoom,
-    ) {
+    ) -> anyhow::Result<()> {
         let input_str = terminal.input.to_string();
         if input_str.trim().is_empty() {
             self.next = None;
+            return Ok(());
         }
 
         if input_str.len() > INPUT_MAX_LEN {
@@ -41,11 +42,13 @@ impl WorkflowHandler for InputValidator {
                 context.user.clone(),
                 "message dropped. Input is too long".to_string(),
             );
-            room.send_message(message.into()).await;
+            room.send_message(message.into()).await?;
             self.next = None;
+            return Ok(());
         }
 
         context.command_str = Some(input_str);
+        Ok(())
     }
 
     fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler>> {
