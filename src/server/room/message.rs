@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use enum_dispatch::enum_dispatch;
-use regex::Regex;
+use regex::{escape, Regex};
 
 use super::user::User;
 
@@ -59,9 +59,13 @@ impl Public {
 impl MessageFormatter for Public {
     fn format(&self, user: &User) -> String {
         let pattern = format!("@{}", user.username);
-        let re = Regex::new(&pattern).unwrap();
-        let replacement = user.theme.style_tagged_username(&pattern).to_string();
-        let message = re.replace_all(&self.body, replacement).to_string();
+        let escaped_pattern = escape(&pattern);
+        let mut message = self.body.clone();
+
+        if let Ok(re) = Regex::new(&escaped_pattern) {
+            let replacement = user.theme.style_tagged_username(&pattern).to_string();
+            message = re.replace_all(&self.body, replacement).to_string();
+        }
 
         let username = user.theme.style_username(&self.from.username);
         format!("{}: {}", username, message)
