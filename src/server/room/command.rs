@@ -177,8 +177,8 @@ impl FromStr for Command {
             },
             b"/back" => Ok(Command::Back),
             b"/name" => match args.splitn(2, ' ').nth(0) {
-                Some(new_name) => Ok(Command::Name(new_name.to_string())),
-                None => Err(Self::Err::ArgumentExpected(format!("new name"))),
+                Some(new_name) if !new_name.is_empty() => Ok(Command::Name(new_name.to_string())),
+                _ => Err(Self::Err::ArgumentExpected(format!("new name"))),
             },
             b"/msg" => {
                 let mut iter = args.splitn(2, ' ');
