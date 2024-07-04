@@ -134,6 +134,14 @@ pub enum Command {
     ))]
     Motd(Option<String>),
 
+    #[strum(props(
+        Cmd = "/whitelist",
+        Args = "<command> [args...]",
+        Help = "Modify the whitelist or whitelist state. See /whitelist help for subcommands",
+        Op = "true"
+    ))]
+    Whitelist(WhitelistCommand),
+
     /// Secret commands (just hidden or easter eggs)
 
     #[strum(props(Cmd = "/me", Args = "[action]"))]
@@ -293,6 +301,10 @@ impl FromStr for Command {
                 Ok(Command::Ban(args.to_string()))
             }
             b"/banned" => Ok(Command::Banned),
+            b"/whitelist" => match args.parse::<WhitelistCommand>() {
+                Ok(sub_cmd) => Ok(Command::Whitelist(sub_cmd)),
+                Err(err) => Err(err),
+            },
             _ => Err(Self::Err::UnknownCommand),
         }
     }
@@ -313,6 +325,119 @@ impl Command {
 
     pub fn is_op(&self) -> bool {
         self.get_str("Op").unwrap_or_default() == "true"
+    }
+
+    pub fn is_visible(&self) -> bool {
+        !self.help().is_empty()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, EnumProperty, EnumIter, EnumCount)]
+pub enum WhitelistCommand {
+    #[strum(props(
+        Cmd = "on",
+        Help = "Enable whitelist mode (applies to new connections only)"
+    ))]
+    On,
+
+    #[strum(props(
+        Cmd = "off",
+        Help = "Disable whitelist mode (applies to new connections only)"
+    ))]
+    Off,
+
+    #[strum(props(
+        Cmd = "add",
+        Args = "<user | key>...",
+        Help = "Add users or keys to the trusted keys"
+    ))]
+    Add(String),
+
+    #[strum(props(
+        Cmd = "remove",
+        Args = "<user | key>...",
+        Help = "Remove users or keys from the trusted keys"
+    ))]
+    Remove(String),
+
+    #[strum(props(
+        Cmd = "sync",
+        Args = "[age]",
+        Help = "Add all keys of users connected since AGE (default 0) ago to the whitelist"
+    ))]
+    AddRecent(Option<usize>),
+
+    #[strum(props(
+        Cmd = "reload",
+        Help = "Import public keys from the whitelist file, replacing those in memory"
+    ))]
+    Reload,
+
+    #[strum(props(Cmd = "reverify", Help = "Kick all users not in the whitelist"))]
+    Reverify,
+
+    #[strum(props(Cmd = "status", Help = "Show status information"))]
+    Status,
+
+    #[strum(props(Cmd = "/help"))]
+    Help,
+}
+
+impl FromStr for WhitelistCommand {
+    type Err = CommandParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.is_empty() {
+            return Err(Self::Err::ArgumentExpected(format!("whitelist command")));
+        };
+
+        let (cmd, args) = if let Some((cmd, args)) = s.split_once(' ') {
+            (cmd, args.trim_start())
+        } else {
+            (s, "")
+        };
+        match cmd.as_bytes() {
+            b"on" => Ok(Self::On),
+            b"off" => Ok(Self::Off),
+            b"add" => match args.is_empty() {
+                true => Err(Self::Err::ArgumentExpected(format!(
+                    "list of users or keys"
+                ))),
+                false => Ok(Self::Add(args.to_string())),
+            },
+            b"remove" => match args.is_empty() {
+                true => Err(Self::Err::ArgumentExpected(format!(
+                    "list of users or keys"
+                ))),
+                false => Ok(Self::Remove(args.to_string())),
+            },
+            b"add-recent" => todo!(),
+            b"reload" => todo!(),
+            b"reverify" => todo!(),
+            b"status" => Ok(Self::Status),
+            b"help" => Ok(Self::Help),
+            _ => Err(Self::Err::UnknownCommand),
+        }
+    }
+}
+
+impl Default for WhitelistCommand {
+    fn default() -> Self {
+        Self::Help
+    }
+}
+
+impl WhitelistCommand {
+    pub fn cmd(&self) -> &str {
+        self.get_str("Cmd").unwrap_or_default()
+    }
+
+    pub fn args(&self) -> &str {
+        self.get_str("Args").unwrap_or_default()
+    }
+
+    pub fn help(&self) -> &str {
+        self.get_str("Help").unwrap_or_default()
     }
 
     pub fn is_visible(&self) -> bool {
@@ -392,5 +517,58 @@ impl CommandCollection {
 
     fn op_visible_iter(&self) -> impl Iterator<Item = &Command> {
         self.all_visible_iter().filter(|c| c.is_op())
+    }
+}
+
+pub struct WhilelistCommandCollection {
+    commands: Vec<WhitelistCommand>,
+}
+
+impl WhilelistCommandCollection {
+    pub fn new() -> Self {
+        let mut commands: Vec<WhitelistCommand> = WhitelistCommand::iter().collect();
+        commands.sort_by(|a, b| a.cmd().len().cmp(&b.cmd().len()));
+        Self { commands }
+    }
+
+    pub fn to_string(&self) -> String {
+        let mut result = format!("Available commands: {}", utils::NEWLINE);
+        let count = self.all_visible_iter().count();
+        let commands = self.all_visible_iter();
+        result.push_str(&self.format(commands, count));
+        result
+    }
+
+    pub fn from_prefix(&self, prefix: &str) -> Option<&WhitelistCommand> {
+        for cmd in &self.commands {
+            if cmd.cmd().starts_with(prefix) {
+                return Some(cmd);
+            }
+        }
+        None
+    }
+
+    fn format<'a, I>(&self, commands: I, count: usize) -> String
+    where
+        I: Iterator<Item = &'a WhitelistCommand> + 'a,
+    {
+        let mut result = String::new();
+        for (idx, cmd) in commands.enumerate() {
+            write!(
+                result,
+                "{:<10} {:<20} {}{}",
+                cmd.cmd(),
+                cmd.args(),
+                cmd.help(),
+                if idx == count - 1 { "" } else { utils::NEWLINE }
+            )
+            .expect(format!("Failed to write {:?} to commands string", cmd).as_str());
+        }
+
+        result
+    }
+
+    fn all_visible_iter(&self) -> impl Iterator<Item = &WhitelistCommand> {
+        self.commands.iter().filter(|cmd| cmd.is_visible())
     }
 }

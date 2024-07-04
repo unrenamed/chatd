@@ -1,42 +1,65 @@
 use russh_keys::key::PublicKey;
+use std::collections::HashSet;
 use std::time::Duration;
 
 use crate::utils::TimedHashSet;
 
+use super::pk::PubKey;
+
 #[derive(Clone)]
 pub struct Auth {
-    operators: Option<Vec<PublicKey>>,
-    trusted_keys: Option<Vec<PublicKey>>,
+    operators: Option<HashSet<PubKey>>,
+    trusted_keys: Option<HashSet<PubKey>>,
+    is_whitelist_enabled: bool,
     banned_usernames: TimedHashSet<String>,
     banned_fingerprints: TimedHashSet<String>,
 }
 
 impl Auth {
-    pub fn new(operators: Option<Vec<PublicKey>>, trusted_keys: Option<Vec<PublicKey>>) -> Self {
+    pub fn new(operators: Option<HashSet<PubKey>>, trusted_keys: Option<HashSet<PubKey>>) -> Self {
         Self {
             operators,
-            trusted_keys,
+            trusted_keys: trusted_keys.clone(),
+            is_whitelist_enabled: trusted_keys.is_some_and(|set| !set.is_empty()),
             banned_fingerprints: TimedHashSet::new(),
             banned_usernames: TimedHashSet::new(),
         }
     }
 
-    pub fn has_operators(&self) -> bool {
-        self.operators.is_some()
+    pub fn enable_whitelist_mode(&mut self) {
+        self.is_whitelist_enabled = true;
+    }
+
+    pub fn disable_whitelist_mode(&mut self) {
+        self.is_whitelist_enabled = false;
+    }
+
+    pub fn is_whitelist_enabled(&self) -> bool {
+        self.is_whitelist_enabled
+    }
+
+    pub fn trusted_keys(&self) -> &Option<HashSet<PubKey>> {
+        &self.trusted_keys
+    }
+
+    pub fn add_trusted_key(&mut self, key: PublicKey) {
+        if let Some(keys) = &mut self.trusted_keys {
+            keys.insert(PubKey::new(key));
+        }
+    }
+
+    pub fn remove_trusted_key(&mut self, key: PublicKey) {
+        if let Some(keys) = &mut self.trusted_keys {
+            keys.remove(&PubKey::new(key));
+        }
     }
 
     pub fn is_op(&self, key: &PublicKey) -> bool {
-        match &self.operators {
-            Some(list) => list.iter().find(|k| (*k).eq(key)).is_some(),
-            None => false,
-        }
+        matches!(&self.operators, Some(list) if list.iter().find(|k| *k == key).is_some())
     }
 
     pub fn is_trusted(&self, key: &PublicKey) -> bool {
-        match &self.trusted_keys {
-            Some(list) => list.iter().find(|k| (*k).eq(key)).is_some(),
-            None => false,
-        }
+        matches!(&self.trusted_keys, Some(list) if list.iter().find(|k| *k == key).is_some())
     }
 
     pub fn check_bans(&mut self, user: &str, key: &PublicKey) -> bool {

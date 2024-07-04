@@ -3,7 +3,7 @@ use std::fmt::Write;
 
 use crate::server::auth::{BanAttribute, BanQuery};
 use crate::server::room::message::Message;
-use crate::server::room::{message, Command, Theme, TimestampMode, UserStatus};
+use crate::server::room::{message, Command, Theme, TimestampMode, UserStatus, WhitelistCommand};
 use crate::server::terminal::Terminal;
 use crate::server::ServerRoom;
 use crate::utils::{self, sanitize};
@@ -691,6 +691,196 @@ impl WorkflowHandler for CommandExecutor {
 
                 let message = message::System::new(user, banned);
                 room.send_message(message.into()).await?;
+            }
+            Command::Whitelist(command) => 'label: {
+                if !user.is_op {
+                    let message = message::Error::new(user, "must be an operator".to_string());
+                    room.send_message(message.into()).await?;
+                    break 'label;
+                }
+
+                match command {
+                    WhitelistCommand::On => {
+                        room.auth().lock().await.enable_whitelist_mode();
+                        let message = message::System::new(
+                            user.clone(),
+                            "Server whitelisting is now enabled".to_string(),
+                        );
+                        room.send_message(message.into()).await?;
+                    }
+                    WhitelistCommand::Off => {
+                        room.auth().lock().await.disable_whitelist_mode();
+                        let message = message::System::new(
+                            user.clone(),
+                            "Server whitelisting is now disabled".to_string(),
+                        );
+                        room.send_message(message.into()).await?;
+                    }
+                    WhitelistCommand::Add(users_or_keys) => {
+                        let mut invalid_keys = vec![];
+                        let mut invalid_users = vec![];
+                        let mut no_key_users = vec![];
+
+                        let mut is_key = false;
+                        for user_or_key in users_or_keys.split_whitespace() {
+                            if user_or_key.starts_with("ssh-") {
+                                is_key = true;
+                                continue;
+                            }
+
+                            if is_key {
+                                let key = user_or_key;
+                                match russh_keys::parse_public_key_base64(&key) {
+                                    Ok(pk) => room.auth().lock().await.add_trusted_key(pk),
+                                    Err(_) => invalid_keys.push(key.to_string()),
+                                }
+                                is_key = false;
+                            } else {
+                                let user = user_or_key;
+                                match room.try_find_member(user).map(|m| &m.user) {
+                                    Some(user) => match &user.public_key {
+                                        Some(pk) => {
+                                            room.auth().lock().await.add_trusted_key(pk.clone())
+                                        }
+                                        None => no_key_users.push(user.to_string()),
+                                    },
+                                    None => invalid_users.push(user.to_string()),
+                                }
+                            }
+                        }
+
+                        let mut messages = vec![];
+                        if !invalid_keys.is_empty() {
+                            messages.push(format!("Invalid keys: {}", invalid_keys.join(", ")));
+                        }
+                        if !invalid_users.is_empty() {
+                            messages.push(format!("Invalid users: {}", invalid_users.join(", ")));
+                        }
+                        if !no_key_users.is_empty() {
+                            messages.push(format!(
+                                "Users w/o public keys: {}",
+                                no_key_users.join(", ")
+                            ));
+                        }
+
+                        if messages.is_empty() {
+                            messages.push(format!("Server whitelist is updated!"));
+                        }
+
+                        let message = message::System::new(user, messages.join(utils::NEWLINE));
+                        room.send_message(message.into()).await?;
+                    }
+                    WhitelistCommand::Remove(users_or_keys) => {
+                        let mut invalid_keys = vec![];
+                        let mut invalid_users = vec![];
+                        let mut no_key_users = vec![];
+
+                        let mut is_key = false;
+                        for user_or_key in users_or_keys.split_whitespace() {
+                            if user_or_key.starts_with("ssh-") {
+                                is_key = true;
+                                continue;
+                            }
+
+                            if is_key {
+                                let key = user_or_key;
+                                match russh_keys::parse_public_key_base64(&key) {
+                                    Ok(pk) => room.auth().lock().await.remove_trusted_key(pk),
+                                    Err(_) => invalid_keys.push(key.to_string()),
+                                }
+                                is_key = false;
+                            } else {
+                                let user = user_or_key;
+                                match room.try_find_member(user).map(|m| &m.user) {
+                                    Some(user) => match &user.public_key {
+                                        Some(pk) => {
+                                            room.auth().lock().await.remove_trusted_key(pk.clone())
+                                        }
+                                        None => no_key_users.push(user.to_string()),
+                                    },
+                                    None => invalid_users.push(user.to_string()),
+                                }
+                            }
+                        }
+
+                        let mut messages = vec![];
+                        if !invalid_keys.is_empty() {
+                            messages.push(format!("Invalid keys: {}", invalid_keys.join(", ")));
+                        }
+                        if !invalid_users.is_empty() {
+                            messages.push(format!("Invalid users: {}", invalid_users.join(", ")));
+                        }
+                        if !no_key_users.is_empty() {
+                            messages.push(format!(
+                                "Users w/o public keys: {}",
+                                no_key_users.join(", ")
+                            ));
+                        }
+
+                        if messages.is_empty() {
+                            messages.push(format!("Server whitelist is updated!"));
+                        }
+
+                        let message = message::System::new(user, messages.join(utils::NEWLINE));
+                        room.send_message(message.into()).await?;
+                    }
+                    WhitelistCommand::AddRecent(_) => todo!(),
+                    WhitelistCommand::Reload => todo!(),
+                    WhitelistCommand::Reverify => todo!(),
+                    WhitelistCommand::Status => {
+                        let auth = room.auth().lock().await;
+                        let mut messages: Vec<String> = vec![];
+
+                        messages.push(
+                            String::from("Server whitelisting is ")
+                                + match auth.is_whitelist_enabled() {
+                                    true => "enabled",
+                                    false => "disabled",
+                                },
+                        );
+
+                        let mut trusted_online_users = vec![];
+                        let mut trusted_keys = vec![];
+
+                        if let Some(keys) = auth.trusted_keys() {
+                            for key in keys {
+                                if let Some(user) = room
+                                    .members_iter()
+                                    .map(|(_, m)| &m.user)
+                                    .find(|u| u.public_key.as_ref().is_some_and(|k| *key == *k))
+                                {
+                                    trusted_online_users.push(user.username.clone());
+                                } else {
+                                    trusted_keys.push(key.fingerprint());
+                                }
+                            }
+                        }
+
+                        if !trusted_online_users.is_empty() {
+                            messages.push(format!(
+                                "Trusted online users: {}",
+                                trusted_online_users.join(", ")
+                            ));
+                        }
+
+                        if !trusted_keys.is_empty() {
+                            messages
+                                .push(format!("Trusted offline keys: {}", trusted_keys.join(", ")));
+                        }
+
+                        drop(auth);
+
+                        let message = message::System::new(user, messages.join(utils::NEWLINE));
+                        room.send_message(message.into()).await?;
+                    }
+                    WhitelistCommand::Help => {
+                        let message = message::System::new(
+                            user.clone(),
+                            room.whitelist_commands().to_string(),
+                        );
+                        room.send_message(message.into()).await?;
+                    }
+                }
             }
         }
 

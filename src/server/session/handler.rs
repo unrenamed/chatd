@@ -125,7 +125,7 @@ impl Handler for ThinHandler {
         info!("None auth request for user {}", user);
 
         let auth = self.auth.lock().await;
-        if auth.has_operators() {
+        if auth.is_whitelist_enabled() {
             return Ok(Auth::Reject {
                 proceed_with_methods: Some(MethodSet::PUBLICKEY),
             });

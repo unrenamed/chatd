@@ -1,4 +1,4 @@
-use std::collections::hash_map::IterMut;
+use std::collections::hash_map::{Iter, IterMut};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -10,11 +10,11 @@ use russh_keys::key::PublicKey;
 use tokio::sync::{mpsc, Mutex};
 
 use super::member::RoomMember;
-use super::message;
 use super::message::Message;
 use super::message_history::MessageHistory;
 use super::user::User;
 use super::CommandCollection;
+use super::{message, WhilelistCommandCollection};
 
 use crate::server::ratelimit::RateLimit;
 use crate::server::Auth;
@@ -32,6 +32,7 @@ pub struct ServerRoom {
     ratelims: HashMap<UserId, RateLimit>,
     history: MessageHistory,
     commands: CommandCollection,
+    whitelist_commands: WhilelistCommandCollection,
     motd: String,
     created_at: DateTime<Utc>,
     auth: Arc<Mutex<Auth>>,
@@ -46,6 +47,7 @@ impl ServerRoom {
             ratelims: HashMap::new(),
             history: MessageHistory::new(),
             commands: CommandCollection::new(),
+            whitelist_commands: WhilelistCommandCollection::new(),
             motd: motd.to_string(),
             created_at: Utc::now(),
         }
@@ -53,6 +55,10 @@ impl ServerRoom {
 
     pub fn commands(&self) -> &CommandCollection {
         &self.commands
+    }
+
+    pub fn whitelist_commands(&self) -> &WhilelistCommandCollection {
+        &self.whitelist_commands
     }
 
     pub fn motd(&self) -> &String {
@@ -91,6 +97,10 @@ impl ServerRoom {
 
     pub fn members_iter_mut(&mut self) -> IterMut<UserName, RoomMember> {
         self.members.iter_mut()
+    }
+
+    pub fn members_iter(&self) -> Iter<UserName, RoomMember> {
+        self.members.iter()
     }
 
     pub fn names(&self) -> &HashMap<UserId, UserName> {

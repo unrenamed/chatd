@@ -1,9 +1,10 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use clap::Parser;
 use cli::Cli;
 use log::LevelFilter;
-use russh_keys::key::{KeyPair, PublicKey};
+use russh_keys::key::KeyPair;
+use server::PubKey;
 use tokio::sync::Mutex;
 
 mod cli;
@@ -38,29 +39,35 @@ async fn main() {
     let server_keys = vec![key_pair];
 
     // Initiate server oplist
-    let oplist = match cli.oplist {
-        Some(path) => Some(
-            utils::fs::read_file_lines(&path)
-                .expect("Failed to read the oplist file")
-                .iter()
-                .filter_map(|line| utils::ssh::split_ssh_key(line))
-                .filter_map(|(_, key, _)| russh_keys::parse_public_key_base64(&key).ok())
-                .collect::<Vec<PublicKey>>(),
-        ),
-        None => None,
-    };
+    let mut oplist: Option<HashSet<PubKey>> = None;
+    if let Some(path) = cli.oplist {
+        oplist = Some(HashSet::new());
+        utils::fs::read_file_lines(&path)
+            .expect("Failed to read the oplist file")
+            .iter()
+            .filter_map(|line| utils::ssh::split_ssh_key(line))
+            .filter_map(|(_, key, _)| russh_keys::parse_public_key_base64(&key).ok())
+            .for_each(|key| {
+                if let Some(set) = &mut oplist {
+                    set.insert(PubKey::new(key));
+                }
+            });
+    }
 
     // Initiate server whitelist
-    let whitelist = match cli.whitelist {
-        Some(path) => Some(
-            utils::fs::read_file_lines(&path)
-                .expect("Failed to read the whitelist file")
-                .iter()
-                .filter_map(|line| utils::ssh::split_ssh_key(line))
-                .filter_map(|(_, key, _)| russh_keys::parse_public_key_base64(&key).ok())
-                .collect::<Vec<PublicKey>>(),
-        ),
-        None => None,
+    let mut whitelist: Option<HashSet<PubKey>> = None;
+    if let Some(path) = cli.whitelist {
+        whitelist = Some(HashSet::new());
+        utils::fs::read_file_lines(&path)
+            .expect("Failed to read the whitelist file")
+            .iter()
+            .filter_map(|line| utils::ssh::split_ssh_key(line))
+            .filter_map(|(_, key, _)| russh_keys::parse_public_key_base64(&key).ok())
+            .for_each(|key| {
+                if let Some(set) = &mut whitelist {
+                    set.insert(PubKey::new(key));
+                }
+            });
     };
 
     // Initiate motd
