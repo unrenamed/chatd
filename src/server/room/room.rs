@@ -18,7 +18,7 @@ use super::CommandCollection;
 
 use crate::server::ratelimit::RateLimit;
 use crate::server::Auth;
-use crate::utils;
+use crate::utils::{self, sanitize};
 
 type UserId = usize;
 type UserName = String;
@@ -108,7 +108,8 @@ impl ServerRoom {
     ) -> anyhow::Result<User> {
         let name = match self.is_room_member(&username) {
             true => User::gen_rand_name(),
-            false => username,
+            false if username.trim().is_empty() => User::gen_rand_name(),
+            false => sanitize::name(&username),
         };
 
         let user = User::new(user_id, name.clone(), ssh_id, key, is_op);

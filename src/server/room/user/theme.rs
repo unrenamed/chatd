@@ -42,7 +42,7 @@ impl From<ThemeColor> for Color {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, EnumIter, EnumString)]
+#[derive(Debug, Clone, Copy, PartialEq, EnumIter, EnumString)]
 #[strum(ascii_case_insensitive)]
 pub enum Theme {
     Colors,

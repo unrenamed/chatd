@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use strum::{EnumIter, EnumString, IntoEnumIterator};
 
-#[derive(Debug, Clone, PartialEq, EnumIter, EnumString)]
+#[derive(Debug, Clone, Copy, PartialEq, EnumIter, EnumString)]
 #[strum(ascii_case_insensitive)]
 pub enum TimestampMode {
     Time,

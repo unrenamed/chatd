@@ -1,12 +1,12 @@
 use async_trait::async_trait;
-use std::io::Write;
+use std::fmt::Write;
 
 use crate::server::auth::{BanAttribute, BanQuery};
 use crate::server::room::message::Message;
 use crate::server::room::{message, Command, Theme, TimestampMode, UserStatus};
 use crate::server::terminal::Terminal;
 use crate::server::ServerRoom;
-use crate::utils;
+use crate::utils::{self, sanitize};
 
 use super::handler::WorkflowHandler;
 use super::WorkflowContext;
@@ -24,14 +24,13 @@ impl WorkflowHandler for CommandExecutor {
         terminal: &mut Terminal,
         room: &mut ServerRoom,
     ) -> anyhow::Result<()> {
-        if context.command.is_none() {
-            return Ok(());
-        }
-
-        let username = &context.user.username;
+        let command = match &context.command {
+            Some(command) => command,
+            None => return Ok(()),
+        };
         let user = context.user.clone();
+        let username = &user.username;
 
-        let command = context.command.as_ref().unwrap().clone();
         match command {
             Command::Exit => {
                 terminal.exit();
@@ -61,8 +60,9 @@ impl WorkflowHandler for CommandExecutor {
             Command::Name(new_name) => 'label: {
                 let member = room.find_member_mut(username);
                 let user = member.user.clone();
+                let new_name = sanitize::name(&new_name);
 
-                if user.username == new_name {
+                if user.username == *new_name {
                     let message = message::Error::new(
                         user,
                         "new name is the same as the original".to_string(),
@@ -165,7 +165,7 @@ impl WorkflowHandler for CommandExecutor {
 
                 let member = room.find_member(target_name.unwrap());
                 let to = member.user.clone();
-                let message = message::Private::new(from, to, message_body);
+                let message = message::Private::new(from, to, (*message_body).to_string());
                 room.send_message(message.into()).await?;
             }
             Command::Users => {
@@ -214,7 +214,7 @@ impl WorkflowHandler for CommandExecutor {
                     break 'label;
                 }
 
-                let target_name = target_name.unwrap();
+                let target_name = target_name.as_deref().unwrap();
                 let target = room
                     .try_find_member_mut(&target_name)
                     .map(|member| &member.user);
@@ -269,7 +269,7 @@ impl WorkflowHandler for CommandExecutor {
             }
             Command::Timestamp(mode) => {
                 let member = room.find_member_mut(username);
-                member.user.set_timestamp_mode(mode);
+                member.user.set_timestamp_mode(*mode);
                 let message = message::System::new(
                     member.user.clone(),
                     match member.user.timestamp_mode {
@@ -286,7 +286,7 @@ impl WorkflowHandler for CommandExecutor {
                 let member = room.find_member_mut(username);
                 let message = message::System::new(user, format!("Set theme: {}", theme));
 
-                member.user.theme = theme.into();
+                member.user.theme = (*theme).into();
                 terminal.set_prompt(&terminal.get_prompt(&member.user));
                 room.send_message(message.into()).await?;
             }
@@ -325,7 +325,7 @@ impl WorkflowHandler for CommandExecutor {
                     break 'label;
                 }
 
-                let target_username = target.unwrap();
+                let target_username = target.as_deref().unwrap();
                 match room
                     .try_find_member(&target_username)
                     .map(|a| a.user.id.clone())
@@ -424,7 +424,7 @@ impl WorkflowHandler for CommandExecutor {
                     break 'label;
                 }
 
-                let target = target.unwrap();
+                let target = target.as_deref().unwrap();
                 if target == "$" {
                     room.find_member_mut(username).user.focused.clear();
                     let message =
@@ -535,7 +535,7 @@ impl WorkflowHandler for CommandExecutor {
                     break 'label;
                 }
 
-                room.set_motd(new_motd.unwrap());
+                room.set_motd(new_motd.as_deref().unwrap().to_string());
 
                 let message = message::Announce::new(
                     user.clone(),
@@ -676,18 +676,20 @@ impl WorkflowHandler for CommandExecutor {
                 }
 
                 let (names, fingerprints) = room.auth().lock().await.banned();
-                let mut buf = Vec::new();
-                write!(buf, "Banned:").unwrap();
+                let mut banned = String::new();
+                write!(banned, "Banned:").expect("Failed to write banned members to string");
 
                 for name in names {
-                    write!(buf, "{} \"name={}\"", utils::NEWLINE, name).unwrap();
+                    write!(banned, "{} \"name={}\"", utils::NEWLINE, name)
+                        .expect("Failed to write banned members to string");
                 }
 
                 for fingerprint in fingerprints {
-                    write!(buf, "{} \"fingerprint={}\"", utils::NEWLINE, fingerprint).unwrap();
+                    write!(banned, "{} \"fingerprint={}\"", utils::NEWLINE, fingerprint)
+                        .expect("Failed to write banned members to string");
                 }
 
-                let message = message::System::new(user, String::from_utf8(buf).unwrap());
+                let message = message::System::new(user, banned);
                 room.send_message(message.into()).await?;
             }
         }
