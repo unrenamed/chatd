@@ -33,7 +33,8 @@ impl WorkflowHandler for CommandExecutor {
 
         match command {
             Command::Exit => {
-                terminal.exit();
+                let member = room.find_member(username);
+                member.exit()?;
             }
             Command::Away(reason) => {
                 let member = room.find_member_mut(username);
@@ -560,13 +561,12 @@ impl WorkflowHandler for CommandExecutor {
                         room.send_message(message.into()).await?;
                         break 'label;
                     }
-                    Some(_) => {
-                        terminal.exit();
-
+                    Some(member) => {
                         let message = message::Announce::new(
                             user,
                             format!("kicked {} from the server", target_username),
                         );
+                        member.exit()?;
                         room.send_message(message.into()).await?;
                     }
                 }
@@ -598,11 +598,11 @@ impl WorkflowHandler for CommandExecutor {
                                     &member.user.public_key.as_ref().unwrap().fingerprint(),
                                     duration,
                                 );
-                                terminal.exit();
                                 let message = message::Announce::new(
                                     user.clone(),
                                     format!("banned {} from the server", member.user.username),
                                 );
+                                member.exit()?;
                                 messages.push(message.into());
                             }
                             None => {
@@ -621,12 +621,12 @@ impl WorkflowHandler for CommandExecutor {
 
                                     for (_, member) in room.members_iter_mut() {
                                         if member.user.username.eq(&name) {
-                                            terminal.exit();
                                             let message = message::Announce::new(
                                                 user.clone(),
                                                 format!("banned {} from the server", name),
                                             );
                                             messages.push(message.into());
+                                            member.exit()?;
                                         }
                                     }
                                 }
@@ -639,7 +639,6 @@ impl WorkflowHandler for CommandExecutor {
                                     for (_, member) in room.members_iter_mut() {
                                         if let Some(key) = &member.user.public_key {
                                             if key.fingerprint().eq(&fingerprint) {
-                                                terminal.exit();
                                                 let message = message::Announce::new(
                                                     user.clone(),
                                                     format!(
@@ -648,6 +647,7 @@ impl WorkflowHandler for CommandExecutor {
                                                     ),
                                                 );
                                                 messages.push(message.into());
+                                                member.exit()?;
                                             }
                                         }
                                     }

@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use log::{debug, error, info, warn};
+use log::{trace, error, info, warn};
 use russh_keys::key::PublicKey;
 use terminal_keycode::KeyCode;
 use tokio::spawn;
@@ -80,17 +80,20 @@ impl SessionRepository {
                     let room = room.clone();
                     let mut terminal = Terminal::new(handle);
                     let (message_tx, message_rx) = mpsc::channel(100);
+                    let (exit_tx, exit_rx) = watch::channel(());
 
                     spawn(async move {
                         {
                             let mut room = room.lock().await;
-                            if let Ok(user) =
-                                room.join(id, username, is_op, pk, ssh_id, message_tx).await
-                            {
+                            let join_result = room
+                                .join(id, username, is_op, pk, ssh_id, message_tx, exit_tx)
+                                .await;
+                            if let Ok(user) = join_result {
                                 terminal.set_prompt(&terminal.get_prompt(&user));
                             }
                         }
-                        Self::handle_session(id, room, terminal, event_rx, message_rx).await;
+                        Self::handle_session(id, room, terminal, event_rx, message_rx, exit_rx)
+                            .await;
                     });
                 }
             }
@@ -103,29 +106,32 @@ impl SessionRepository {
         terminal: Terminal,
         event_rx: Receiver<SessionEvent>,
         message_rx: Receiver<String>,
+        exit_rx: watch::Receiver<()>,
     ) {
-        let (exit_tx, exit_rx) = watch::channel(());
         let terminal = Arc::new(Mutex::new(terminal));
+        let (disconnect_tx, disconnect_rx) = watch::channel(());
 
         let session_handle = spawn(Self::process_session_events(
             id,
             room.clone(),
             terminal.clone(),
             event_rx,
-            exit_tx.clone(),
+            disconnect_tx,
         ));
 
-        let message_handle = spawn(Self::process_message_events(
+        let room_handle = spawn(Self::process_room_events(
             id,
+            room.clone(),
             terminal,
             message_rx,
-            exit_rx.clone(),
+            exit_rx,
+            disconnect_rx,
         ));
 
         let _ = session_handle.await;
-        let _ = message_handle.await;
+        let _ = room_handle.await;
 
-        debug!("Fell through the session tasks, indicating disconnection on session. Threads are closed");
+        trace!("Fell through the session tasks, indicating disconnection on session. Threads are closed");
     }
 
     async fn process_session_events(
@@ -133,7 +139,7 @@ impl SessionRepository {
         room: Arc<Mutex<ServerRoom>>,
         terminal: Arc<Mutex<Terminal>>,
         mut event_rx: Receiver<SessionEvent>,
-        exit_tx: watch::Sender<()>,
+        disconnect_tx: watch::Sender<()>,
     ) {
         info!("Session events processing task for id={id} is started");
 
@@ -203,11 +209,7 @@ impl SessionRepository {
                     }
                 }
                 SessionEvent::Disconnect => {
-                    let mut room = room.lock().await;
-                    if let Err(err) = room.leave(&id).await {
-                        error!("Failed to disconnect user {} from the server: {}", id, err);
-                    }
-                    let _ = exit_tx.send(());
+                    let _ = disconnect_tx.send(());
                     info!("Session events processing task for id={id} is finished");
                     return;
                 }
@@ -219,16 +221,29 @@ impl SessionRepository {
         }
     }
 
-    async fn process_message_events(
+    async fn process_room_events(
         id: SessionId,
+        room: Arc<Mutex<ServerRoom>>,
         terminal: Arc<Mutex<Terminal>>,
         mut message_rx: Receiver<String>,
         mut exit_rx: watch::Receiver<()>,
+        mut disconnect_rx: watch::Receiver<()>,
     ) {
         info!("Render task for id={id} is started");
 
         tokio::select! {
             _ = exit_rx.changed() => {
+                terminal.lock().await.exit();
+                if let Err(err) = room.lock().await.leave(&id).await {
+                    error!("Failed to exit the server by user {}: {}", id, err);
+                }
+                info!("Render task for id={id} aborted because session is closed by a user");
+                return;
+            }
+            _ = disconnect_rx.changed() => {
+                if let Err(err) = room.lock().await.leave(&id).await {
+                    error!("Failed to disconnect user {} from the server: {}", id, err);
+                }
                 info!("Render task for id={id} aborted because session is disconnected");
                 return;
             }

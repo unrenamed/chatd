@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use governor::Quota;
 use nonzero_ext::nonzero;
 use russh_keys::key::PublicKey;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, watch, Mutex};
 
 use super::member::RoomMember;
 use super::message::Message;
@@ -114,7 +114,8 @@ impl ServerRoom {
         is_op: bool,
         key: Option<PublicKey>,
         ssh_id: String,
-        tx: mpsc::Sender<String>,
+        message_tx: mpsc::Sender<String>,
+        exit_tx: watch::Sender<()>,
     ) -> anyhow::Result<User> {
         let name = match self.is_room_member(&username) {
             true => User::gen_rand_name(),
@@ -123,7 +124,7 @@ impl ServerRoom {
         };
 
         let user = User::new(user_id, name.clone(), ssh_id, key, is_op);
-        let member = RoomMember::new(user.clone(), tx);
+        let member = RoomMember::new(user.clone(), message_tx, exit_tx);
 
         self.members.insert(name.clone(), member);
         self.names.insert(user_id, name.clone());
@@ -165,9 +166,10 @@ impl ServerRoom {
             None => return Ok(()),
         };
 
-        let user = self.find_member(&username).user.clone();
+        let member = self.find_member(&username);
+        let user = &member.user;
         let duration = humantime::format_duration(user.joined_duration());
-        let message = message::Announce::new(user, format!("left: (After {})", duration));
+        let message = message::Announce::new(user.clone(), format!("left: (After {})", duration));
         self.send_message(message.into()).await?;
 
         self.members.remove(&username);

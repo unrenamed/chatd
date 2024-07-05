@@ -23,11 +23,19 @@ impl TerminalHandle {
         let handle = self.handle.clone();
         let channel_id = self.channel_id.clone();
 
+        if self.closed {
+            trace!(
+                "Terminal handle is already closed for channel {}. Ignoring this close call",
+                self.channel_id
+            );
+            return;
+        }
+
         tokio::spawn(async move {
             let result = handle.close(channel_id).await;
             if result.is_err() {
                 error!(
-                    "[channel {}] Failed to close session: {:?}",
+                    "Failed to close session for channel {}: {:?}",
                     channel_id, result
                 );
             }
@@ -47,7 +55,7 @@ impl std::io::Write for TerminalHandle {
     fn flush(&mut self) -> std::io::Result<()> {
         if self.closed {
             trace!(
-                "[channel {}] Handle is already closed. Ignoring this flush call",
+                "Terminal handle is already closed for channel {}. Ignoring this flush call",
                 self.channel_id
             );
             return Ok(());
@@ -60,7 +68,7 @@ impl std::io::Write for TerminalHandle {
             let result = handle.data(channel_id, data).await;
             if result.is_err() {
                 error!(
-                    "[channel {}] Failed to send data to the handle: {:?}",
+                    "Failed to send data to the handle in channel {}: {:?}",
                     channel_id, result
                 );
             }

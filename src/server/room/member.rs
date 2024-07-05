@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 use crate::server::room::message;
 use crate::server::room::message::Message;
@@ -11,14 +11,16 @@ use super::message::MessageFormatter;
 pub struct RoomMember {
     pub user: User,
     message_tx: mpsc::Sender<String>,
+    exit_tx: watch::Sender<()>,
     last_sent_at: Option<DateTime<Utc>>,
 }
 
 impl RoomMember {
-    pub fn new(user: User, message_tx: mpsc::Sender<String>) -> Self {
+    pub fn new(user: User, message_tx: mpsc::Sender<String>, exit_tx: watch::Sender<()>) -> Self {
         Self {
             user,
             message_tx,
+            exit_tx,
             last_sent_at: None,
         }
     }
@@ -29,6 +31,10 @@ impl RoomMember {
 
     pub fn update_last_sent_time(&mut self, time: DateTime<Utc>) {
         self.last_sent_at = Some(time);
+    }
+
+    pub fn exit(&self) -> Result<(), watch::error::SendError<()>> {
+        self.exit_tx.send(())
     }
 
     pub async fn send_message(&self, msg: Message) -> Result<(), mpsc::error::SendError<String>> {
