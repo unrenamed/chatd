@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use super::handler::WorkflowHandler;
 use super::WorkflowContext;
 
-use crate::server::room::{Command, Theme, TimestampMode};
+use crate::server::room::{Command, CommandProps, Theme, TimestampMode, CHAT_COMMANDS};
 use crate::server::terminal::Terminal;
 use crate::server::ServerRoom;
 
@@ -30,7 +30,7 @@ impl WorkflowHandler for Autocomplete {
         let cmd = iter.next().unwrap_or(&input_str);
         let arg1 = iter.next().unwrap_or("").trim();
 
-        let completed_cmd = match room.commands().from_prefix(&cmd) {
+        let completed_cmd = match CHAT_COMMANDS.iter().find(|c| c.has_prefix(cmd)) {
             Some(cmd) => cmd,
             None => return Ok(()),
         };

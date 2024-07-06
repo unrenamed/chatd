@@ -51,7 +51,7 @@ pub enum Theme {
 }
 
 impl Theme {
-    pub fn strings() -> Vec<String> {
+    pub fn values() -> Vec<String> {
         Theme::iter()
             .map(|t| t.to_string())
             .collect::<Vec<String>>()

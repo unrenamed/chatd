@@ -17,6 +17,12 @@ impl Default for TimestampMode {
 }
 
 impl TimestampMode {
+    pub fn values() -> Vec<String> {
+        TimestampMode::iter()
+            .map(|m| m.to_string())
+            .collect::<Vec<String>>()
+    }
+
     pub fn format(&self) -> Option<&str> {
         match self {
             TimestampMode::Time => Some("%H:%M"),

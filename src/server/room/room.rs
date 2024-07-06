@@ -10,11 +10,9 @@ use russh_keys::key::PublicKey;
 use tokio::sync::{mpsc, watch, Mutex};
 
 use super::member::RoomMember;
-use super::message::Message;
+use super::message::{self, Message};
 use super::message_history::MessageHistory;
 use super::user::User;
-use super::CommandCollection;
-use super::{message, WhilelistCommandCollection};
 
 use crate::server::ratelimit::RateLimit;
 use crate::server::Auth;
@@ -31,8 +29,6 @@ pub struct ServerRoom {
     members: HashMap<UserName, RoomMember>,
     ratelims: HashMap<UserId, RateLimit>,
     history: MessageHistory,
-    commands: CommandCollection,
-    whitelist_commands: WhilelistCommandCollection,
     motd: String,
     created_at: DateTime<Utc>,
     auth: Arc<Mutex<Auth>>,
@@ -46,19 +42,9 @@ impl ServerRoom {
             members: HashMap::new(),
             ratelims: HashMap::new(),
             history: MessageHistory::new(),
-            commands: CommandCollection::new(),
-            whitelist_commands: WhilelistCommandCollection::new(),
             motd: motd.to_string(),
             created_at: Utc::now(),
         }
-    }
-
-    pub fn commands(&self) -> &CommandCollection {
-        &self.commands
-    }
-
-    pub fn whitelist_commands(&self) -> &WhilelistCommandCollection {
-        &self.whitelist_commands
     }
 
     pub fn motd(&self) -> &String {

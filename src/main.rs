@@ -1,10 +1,10 @@
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use clap::Parser;
 use cli::Cli;
 use log::LevelFilter;
 use russh_keys::key::KeyPair;
-use server::PubKey;
+use server::PublicKeyLoader;
 use tokio::sync::Mutex;
 
 mod cli;
@@ -39,35 +39,15 @@ async fn main() {
     let server_keys = vec![key_pair];
 
     // Initiate server oplist
-    let mut oplist: Option<HashSet<PubKey>> = None;
+    let mut oplist_loader = None;
     if let Some(path) = cli.oplist {
-        oplist = Some(HashSet::new());
-        utils::fs::read_file_lines(&path)
-            .expect("Failed to read the oplist file")
-            .iter()
-            .filter_map(|line| utils::ssh::split_ssh_key(line))
-            .filter_map(|(_, key, _)| russh_keys::parse_public_key_base64(&key).ok())
-            .for_each(|key| {
-                if let Some(set) = &mut oplist {
-                    set.insert(PubKey::new(key));
-                }
-            });
-    }
+        oplist_loader = Some(PublicKeyLoader::new(&path));
+    };
 
-    // Initiate server whitelist
-    let mut whitelist: Option<HashSet<PubKey>> = None;
+    // Initiate server whitelist loader
+    let mut whitelist_loader = None;
     if let Some(path) = cli.whitelist {
-        whitelist = Some(HashSet::new());
-        utils::fs::read_file_lines(&path)
-            .expect("Failed to read the whitelist file")
-            .iter()
-            .filter_map(|line| utils::ssh::split_ssh_key(line))
-            .filter_map(|(_, key, _)| russh_keys::parse_public_key_base64(&key).ok())
-            .for_each(|key| {
-                if let Some(set) = &mut whitelist {
-                    set.insert(PubKey::new(key));
-                }
-            });
+        whitelist_loader = Some(PublicKeyLoader::new(&path));
     };
 
     // Initiate motd
@@ -80,8 +60,25 @@ async fn main() {
     // Initiate server <-> session repository message channel
     let (tx, rx) = tokio::sync::mpsc::channel(1000);
 
+    // Initate authorization service
+    let auth = Arc::new(Mutex::new(server::Auth::new(
+        oplist_loader.clone(),
+        whitelist_loader.clone(),
+    )));
+    if whitelist_loader.is_some() {
+        auth.lock()
+            .await
+            .load_trusted_keys()
+            .expect("Failed to load public keys from whitelist");
+    }
+    if oplist_loader.is_some() {
+        auth.lock()
+            .await
+            .load_operators()
+            .expect("Failed to load public keys from oplist");
+    }
+
     // Initate server and session repository
-    let auth = Arc::new(Mutex::new(server::Auth::new(oplist, whitelist)));
     let room = server::ServerRoom::new(&motd, auth.clone());
     let repository = server::SessionRepository::new(rx);
     let mut server = server::AppServer::new(cli.port, auth.clone(), room, &server_keys, tx);
