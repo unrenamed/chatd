@@ -74,7 +74,7 @@ impl PubKeyFileManager {
         let keys: HashSet<PubKey> = lines
             .iter()
             .filter_map(|line| utils::ssh::split_ssh_key(line))
-            .filter_map(|(_, key, _)| russh_keys::parse_public_key_base64(&key).ok())
+            .filter_map(|(_, key)| russh_keys::parse_public_key_base64(&key).ok())
             .map(|key| key.into())
             .collect();
 

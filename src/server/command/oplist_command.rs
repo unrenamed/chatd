@@ -81,7 +81,7 @@ impl FromStr for OplistCommand {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.is_empty() {
-            return Err(Self::Err::ArgumentExpected(format!("whitelist command")));
+            return Err(Self::Err::ArgumentExpected(format!("oplist command")));
         };
 
         let (cmd, args) = if let Some((cmd, args)) = s.split_once(' ') {

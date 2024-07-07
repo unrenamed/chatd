@@ -11,13 +11,6 @@ impl<T> TimedHashSet<T>
 where
     T: Eq + std::hash::Hash + Clone,
 {
-    pub fn new() -> Self {
-        TimedHashSet {
-            items: HashMap::new(),
-            expiration_times: HashMap::new(),
-        }
-    }
-
     pub fn insert(&mut self, item: T, expiration_time: Duration) {
         let now = Instant::now();
         self.items.insert(item.clone(), now);
