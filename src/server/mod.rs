@@ -10,7 +10,7 @@ mod terminal;
 mod user;
 
 pub use auth::Auth;
-pub use auth::PublicKeyLoader;
+pub use auth::PubKeyFileManager;
 pub use room::ServerRoom;
 pub use server::AppServer;
 pub use session::SessionRepository;

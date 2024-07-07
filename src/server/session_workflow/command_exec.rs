@@ -885,22 +885,29 @@ async fn exec_whitelist_command(
                 room.auth().lock().await.clear_trusted_keys();
             }
             let message: Message = match room.auth().lock().await.load_trusted_keys() {
-                Ok(_) => message::System::new(
-                    user.clone(),
-                    "Trusted keys are up-to-date with the whitelist file".to_string(),
-                )
-                .into(),
-                Err(err) => message::Error::new(user.clone(), err.to_string()).into(),
+                Ok(_) => {
+                    let body = "Trusted keys are up-to-date with the whitelist file".to_string();
+                    message::System::new(user.clone(), body).into()
+                }
+                Err(err) => {
+                    let body = err.to_string();
+                    message::Error::new(user.clone(), body).into()
+                }
             };
             room.send_message(message).await?;
         }
         WhitelistCommand::Save => {
-            room.auth().lock().await.save_trusted_keys();
-            let message = message::System::new(
-                user.clone(),
-                "Whitelist file is up-to-date with the trusted keys".to_string(),
-            );
-            room.send_message(message.into()).await?;
+            let message: Message = match room.auth().lock().await.save_trusted_keys() {
+                Ok(_) => {
+                    let body = "Whitelist file is up-to-date with the trusted keys".to_string();
+                    message::System::new(user.clone(), body).into()
+                }
+                Err(err) => {
+                    let body = err.to_string();
+                    message::Error::new(user.clone(), body).into()
+                }
+            };
+            room.send_message(message).await?;
         }
         WhitelistCommand::Reverify => 'label: {
             if !room.auth().lock().await.is_whitelist_enabled() {
@@ -1127,22 +1134,29 @@ async fn exec_oplist_command(
                 room.auth().lock().await.clear_operators();
             }
             let message: Message = match room.auth().lock().await.load_operators() {
-                Ok(_) => message::System::new(
-                    user.clone(),
-                    "Operators keys are up-to-date with the oplist file".to_string(),
-                )
-                .into(),
-                Err(err) => message::Error::new(user.clone(), err.to_string()).into(),
+                Ok(_) => {
+                    let body = "Operators keys are up-to-date with the oplist file".to_string();
+                    message::System::new(user.clone(), body).into()
+                }
+                Err(err) => {
+                    let body = err.to_string();
+                    message::Error::new(user.clone(), body).into()
+                }
             };
             room.send_message(message).await?;
         }
         OplistCommand::Save => {
-            room.auth().lock().await.save_operators();
-            let message = message::System::new(
-                user.clone(),
-                "Oplist file is up-to-date with the operators".to_string(),
-            );
-            room.send_message(message.into()).await?;
+            let message: Message = match room.auth().lock().await.save_operators() {
+                Ok(_) => {
+                    let body = "Oplist file is up-to-date with the operators".to_string();
+                    message::System::new(user.clone(), body).into()
+                }
+                Err(err) => {
+                    let body = err.to_string();
+                    message::Error::new(user.clone(), body).into()
+                }
+            };
+            room.send_message(message).await?;
         }
         OplistCommand::Status => {
             let auth = room.auth().lock().await;

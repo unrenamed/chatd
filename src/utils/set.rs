@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct TimedHashSet<T> {
     items: HashMap<T, Instant>,
     expiration_times: HashMap<T, Duration>,

@@ -1,37 +1,38 @@
 use russh_keys::key::PublicKey;
 use std::collections::HashSet;
-use std::fmt::Display;
 use std::time::Duration;
 
 use crate::utils::TimedHashSet;
 
 use super::pubkey::PubKey;
-use super::PublicKeyLoader;
+use super::{pubkey_file_manager, PubKeyFileManager};
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum AuthKeyLoadError {
+#[derive(Debug)]
+pub enum AuthError {
     NoWhitelist,
     NoOplist,
-    IOParse(String),
+    LoadKeysError(pubkey_file_manager::LoadError),
+    SaveKeysError(pubkey_file_manager::SaveError),
 }
 
-impl Display for AuthKeyLoadError {
+impl std::fmt::Display for AuthError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AuthKeyLoadError::NoWhitelist => write!(f, "server has no whitelist file to load from"),
-            AuthKeyLoadError::NoOplist => write!(f, "server has no oplist file to load from"),
-            AuthKeyLoadError::IOParse(err) => write!(f, "I/O or parse error. {}", err),
+            AuthError::NoWhitelist => write!(f, "no whitelist file in the server configuration"),
+            AuthError::NoOplist => write!(f, "no oplist file in the server configuration"),
+            AuthError::LoadKeysError(err) => write!(f, "{}", err),
+            AuthError::SaveKeysError(err) => write!(f, "{}", err),
         }
     }
 }
 
-impl std::error::Error for AuthKeyLoadError {}
+impl std::error::Error for AuthError {}
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Auth {
     is_whitelist_enabled: bool,
-    oplist_loader: Option<PublicKeyLoader>,
-    whitelist_loader: Option<PublicKeyLoader>,
+    oplist_file_manager: Option<PubKeyFileManager>,
+    whitelist_file_manager: Option<PubKeyFileManager>,
     operators: HashSet<PubKey>,
     trusted_keys: HashSet<PubKey>,
     banned_usernames: TimedHashSet<String>,
@@ -39,19 +40,12 @@ pub struct Auth {
 }
 
 impl Auth {
-    pub fn new(
-        oplist_loader: Option<PublicKeyLoader>,
-        whitelist_loader: Option<PublicKeyLoader>,
-    ) -> Self {
-        Self {
-            is_whitelist_enabled: whitelist_loader.is_some(),
-            oplist_loader,
-            whitelist_loader,
-            operators: HashSet::new(),
-            trusted_keys: HashSet::new(),
-            banned_fingerprints: TimedHashSet::new(),
-            banned_usernames: TimedHashSet::new(),
-        }
+    pub fn set_oplist(&mut self, oplist_file_manager: PubKeyFileManager) {
+        self.oplist_file_manager = Some(oplist_file_manager);
+    }
+
+    pub fn set_whitelist(&mut self, whitelist_file_manager: PubKeyFileManager) {
+        self.whitelist_file_manager = Some(whitelist_file_manager);
     }
 
     pub fn enable_whitelist_mode(&mut self) {
@@ -75,11 +69,11 @@ impl Auth {
     }
 
     pub fn add_trusted_key(&mut self, key: PublicKey) {
-        self.trusted_keys.insert(PubKey::new(key));
+        self.trusted_keys.insert(key.into());
     }
 
     pub fn remove_trusted_key(&mut self, key: PublicKey) {
-        self.trusted_keys.remove(&PubKey::new(key));
+        self.trusted_keys.remove(&key.into());
     }
 
     pub fn operators(&self) -> &HashSet<PubKey> {
@@ -91,40 +85,54 @@ impl Auth {
     }
 
     pub fn add_operator(&mut self, key: PublicKey) {
-        self.operators.insert(PubKey::new(key));
+        self.operators.insert(key.into());
     }
 
     pub fn remove_operator(&mut self, key: PublicKey) {
-        self.operators.remove(&PubKey::new(key));
+        self.operators.remove(&key.into());
     }
 
-    pub fn load_trusted_keys(&mut self) -> Result<(), AuthKeyLoadError> {
-        if let Some(loader) = &self.whitelist_loader {
+    pub fn load_trusted_keys(&mut self) -> Result<(), AuthError> {
+        if let Some(loader) = &self.whitelist_file_manager {
             return loader
-                .load()
+                .load_keys()
                 .map(|keys| {
                     self.trusted_keys.extend(keys);
                 })
-                .map_err(|err| AuthKeyLoadError::IOParse(err.to_string()));
+                .map_err(AuthError::LoadKeysError);
         }
-        Err(AuthKeyLoadError::NoWhitelist)
+        Err(AuthError::NoWhitelist)
     }
 
-    pub fn load_operators(&mut self) -> Result<(), AuthKeyLoadError> {
-        if let Some(loader) = &self.oplist_loader {
+    pub fn load_operators(&mut self) -> Result<(), AuthError> {
+        if let Some(loader) = &self.oplist_file_manager {
             return loader
-                .load()
+                .load_keys()
                 .map(|keys| {
                     self.operators.extend(keys);
                 })
-                .map_err(|err| AuthKeyLoadError::IOParse(err.to_string()));
+                .map_err(AuthError::LoadKeysError);
         }
-        Err(AuthKeyLoadError::NoOplist)
+        Err(AuthError::NoOplist)
     }
 
-    pub fn save_trusted_keys(&mut self) {}
+    pub fn save_trusted_keys(&mut self) -> Result<(), AuthError> {
+        if let Some(loader) = &self.whitelist_file_manager {
+            return loader
+                .save_keys(&self.trusted_keys)
+                .map_err(AuthError::SaveKeysError);
+        }
+        Err(AuthError::NoWhitelist)
+    }
 
-    pub fn save_operators(&mut self) {}
+    pub fn save_operators(&mut self) -> Result<(), AuthError> {
+        if let Some(loader) = &self.oplist_file_manager {
+            return loader
+                .save_keys(&self.operators)
+                .map_err(AuthError::SaveKeysError);
+        }
+        Err(AuthError::NoOplist)
+    }
 
     pub fn is_op(&self, key: &PublicKey) -> bool {
         matches!(&self.operators, list if list.iter().find(|k| *k == key).is_some())

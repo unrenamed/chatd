@@ -1,7 +1,5 @@
-use std::{
-    fmt::{Debug, Display},
-    hash::Hash,
-};
+use std::fmt::{Debug, Display};
+use std::hash::Hash;
 
 use russh_keys::key::PublicKey;
 
@@ -9,12 +7,20 @@ use russh_keys::key::PublicKey;
 pub struct PubKey(PublicKey);
 
 impl PubKey {
-    pub fn new(key: PublicKey) -> Self {
-        Self(key)
-    }
-
     pub fn fingerprint(&self) -> String {
         self.0.fingerprint()
+    }
+}
+
+impl Into<PublicKey> for PubKey {
+    fn into(self) -> PublicKey {
+        self.0
+    }
+}
+
+impl From<PublicKey> for PubKey {
+    fn from(value: PublicKey) -> Self {
+        Self(value)
     }
 }
 

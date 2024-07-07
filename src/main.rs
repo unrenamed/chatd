@@ -4,7 +4,7 @@ use clap::Parser;
 use cli::Cli;
 use log::LevelFilter;
 use russh_keys::key::KeyPair;
-use server::PublicKeyLoader;
+use server::PubKeyFileManager;
 use tokio::sync::Mutex;
 
 mod cli;
@@ -38,16 +38,16 @@ async fn main() {
     };
     let server_keys = vec![key_pair];
 
-    // Initiate server oplist
-    let mut oplist_loader = None;
+    // Initiate server oplist file manager
+    let mut oplist_manager = None;
     if let Some(path) = cli.oplist {
-        oplist_loader = Some(PublicKeyLoader::new(&path));
+        oplist_manager = Some(PubKeyFileManager::new(&path));
     };
 
-    // Initiate server whitelist loader
-    let mut whitelist_loader = None;
+    // Initiate server whitelist file manager
+    let mut whitelist_manager = None;
     if let Some(path) = cli.whitelist {
-        whitelist_loader = Some(PublicKeyLoader::new(&path));
+        whitelist_manager = Some(PubKeyFileManager::new(&path));
     };
 
     // Initiate motd
@@ -61,24 +61,21 @@ async fn main() {
     let (tx, rx) = tokio::sync::mpsc::channel(1000);
 
     // Initate authorization service
-    let auth = Arc::new(Mutex::new(server::Auth::new(
-        oplist_loader.clone(),
-        whitelist_loader.clone(),
-    )));
-    if whitelist_loader.is_some() {
-        auth.lock()
-            .await
-            .load_trusted_keys()
+    let mut auth = server::Auth::default();
+    if let Some(whitelist) = whitelist_manager {
+        auth.set_whitelist(whitelist);
+        auth.enable_whitelist_mode();
+        auth.load_trusted_keys()
             .expect("Failed to load public keys from whitelist");
     }
-    if oplist_loader.is_some() {
-        auth.lock()
-            .await
-            .load_operators()
+    if let Some(oplist) = oplist_manager {
+        auth.set_oplist(oplist);
+        auth.load_operators()
             .expect("Failed to load public keys from oplist");
     }
 
     // Initate server and session repository
+    let auth = Arc::new(Mutex::new(auth));
     let room = server::ServerRoom::new(&motd, auth.clone());
     let repository = server::SessionRepository::new(rx);
     let mut server = server::AppServer::new(cli.port, auth.clone(), room, &server_keys, tx);
