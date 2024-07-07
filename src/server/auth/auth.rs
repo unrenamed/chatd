@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use crate::utils::TimedHashSet;
 
-use super::pk::PubKey;
+use super::pubkey::PubKey;
 use super::PublicKeyLoader;
 
 #[derive(Debug, Clone, PartialEq)]

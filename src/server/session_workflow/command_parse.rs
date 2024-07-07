@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 use chrono::Utc;
 
-use crate::server::room::Command;
-use crate::server::room::{message, CommandParseError};
+use crate::server::command::{Command, CommandParseError};
+use crate::server::room::message;
 use crate::server::terminal::Terminal;
 use crate::server::ServerRoom;
 

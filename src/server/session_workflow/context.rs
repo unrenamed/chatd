@@ -1,4 +1,5 @@
-use crate::server::room::{Command, User};
+use crate::server::user::User;
+use crate::server::command::Command;
 
 pub struct WorkflowContext {
     pub user: User,

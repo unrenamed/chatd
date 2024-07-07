@@ -1,8 +1,8 @@
 use strum::IntoEnumIterator;
 
-use crate::{server::room::OplistCommand, utils};
+use crate::utils;
 
-use super::{Command, CommandProps, WhitelistCommand};
+use super::{Command, CommandProps, OplistCommand, WhitelistCommand};
 
 lazy_static::lazy_static! {
     pub static ref CHAT_COMMANDS: Vec<Command> = Command::iter().collect();

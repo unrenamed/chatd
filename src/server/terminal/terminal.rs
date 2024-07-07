@@ -5,7 +5,7 @@ use crossterm::terminal::{Clear, ClearType};
 use std::io::Write;
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::server::room::User;
+use crate::server::user::User;
 use crate::utils;
 use crate::utils::display_width;
 

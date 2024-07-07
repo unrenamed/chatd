@@ -3,8 +3,9 @@ use async_trait::async_trait;
 use super::handler::WorkflowHandler;
 use super::WorkflowContext;
 
-use crate::server::room::{Command, CommandProps, Theme, TimestampMode, CHAT_COMMANDS};
+use crate::server::command::{Command, CommandProps, CHAT_COMMANDS};
 use crate::server::terminal::Terminal;
+use crate::server::user::{Theme, TimestampMode};
 use crate::server::ServerRoom;
 
 #[derive(Default)]

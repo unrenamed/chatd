@@ -2,13 +2,14 @@ use async_trait::async_trait;
 use std::fmt::Write;
 
 use crate::server::auth::{BanAttribute, BanQuery};
-use crate::server::room::message::Message;
-use crate::server::room::{
-    format_commands, message, CommandProps, OplistCommand, OplistLoadMode, WhitelistLoadMode,
-    CHAT_COMMANDS, OPLIST_COMMANDS, WHITELIST_COMMANDS,
+use crate::server::command::{
+    format_commands, Command, CommandProps, OplistCommand, OplistLoadMode, WhitelistCommand,
+    WhitelistLoadMode, CHAT_COMMANDS, OPLIST_COMMANDS, WHITELIST_COMMANDS,
 };
-use crate::server::room::{Command, Theme, TimestampMode, User, UserStatus, WhitelistCommand};
+use crate::server::room::message;
+use crate::server::room::message::Message;
 use crate::server::terminal::Terminal;
+use crate::server::user::{Theme, TimestampMode, User, UserStatus};
 use crate::server::ServerRoom;
 use crate::utils::{self, sanitize};
 

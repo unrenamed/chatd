@@ -3,7 +3,7 @@ use tokio::sync::{mpsc, watch};
 
 use crate::server::room::message;
 use crate::server::room::message::Message;
-use crate::server::room::user::User;
+use crate::server::user::User;
 
 use super::message::MessageFormatter;
 

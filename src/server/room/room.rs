@@ -12,9 +12,9 @@ use tokio::sync::{mpsc, watch, Mutex};
 use super::member::RoomMember;
 use super::message::{self, Message};
 use super::message_history::MessageHistory;
-use super::user::User;
 
 use crate::server::ratelimit::RateLimit;
+use crate::server::user::User;
 use crate::server::Auth;
 use crate::utils::{self, sanitize};
 
