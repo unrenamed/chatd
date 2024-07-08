@@ -85,7 +85,7 @@ impl FromStr for OplistCommand {
         };
 
         let (cmd, args) = if let Some((cmd, args)) = s.split_once(' ') {
-            (cmd, args.trim_start())
+            (cmd, args.trim())
         } else {
             (s, "")
         };
