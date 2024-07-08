@@ -263,6 +263,10 @@ impl ServerRoom {
     }
 
     pub fn find_name_by_prefix(&self, prefix: &str, skip: &str) -> Option<String> {
+        if prefix.is_empty() {
+            return None;
+        }
+
         let mut members = vec![];
         for member in self.members.values() {
             if member.user.username.starts_with(prefix) {
