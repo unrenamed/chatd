@@ -5,12 +5,11 @@ use crossterm::terminal::{Clear, ClearType};
 use std::io::Write;
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::server::user::User;
 use crate::utils;
-use crate::utils::display_width;
 
 use super::handle::TerminalHandle;
 use super::input::TerminalInput;
+use super::unicode;
 
 #[derive(Clone)]
 pub struct Terminal {
@@ -51,13 +50,9 @@ impl Terminal {
         self.refresh_input_end_coords();
     }
 
-    pub fn get_prompt(&self, user: &User) -> String {
-        format!("[{}] ", user.theme.style_username(&user.username))
-    }
-
-    pub fn set_prompt(&mut self, prompt: &str) {
-        self.prompt = prompt.to_string();
-        self.prompt_display_width = display_width(&self.prompt) as u16;
+    pub fn set_prompt(&mut self, username: &str) {
+        self.prompt = format!("[{}] ", username.to_string());
+        self.prompt_display_width = unicode::display_width(&self.prompt) as u16;
     }
 
     pub fn clear_input(&mut self) -> anyhow::Result<()> {
@@ -240,7 +235,7 @@ impl Terminal {
         graphemes
             .iter()
             .take(pos)
-            .map(|g| utils::display_width(g) as u16)
+            .map(|g| unicode::display_width(g) as u16)
             .sum::<u16>()
     }
 }

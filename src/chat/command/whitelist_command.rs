@@ -2,72 +2,88 @@ use std::fmt;
 use std::str::FromStr;
 use strum::{EnumCount, EnumIter, EnumProperty, EnumString, IntoEnumIterator};
 
-use super::{command_props::CommandProps, parse_error::CommandParseError};
+use super::command_props::CommandProps;
+use super::parse_error::CommandParseError;
 
 #[derive(Debug, Clone, Copy, PartialEq, EnumIter, EnumString)]
 #[strum(ascii_case_insensitive)]
-pub enum OplistLoadMode {
+pub enum WhitelistLoadMode {
     Merge,
     Replace,
 }
 
-impl Default for OplistLoadMode {
+impl Default for WhitelistLoadMode {
     fn default() -> Self {
         Self::Merge
     }
 }
 
-impl OplistLoadMode {
-    pub fn from_prefix(prefix: &str) -> Option<OplistLoadMode> {
-        OplistLoadMode::iter().find(|mode| mode.to_string().starts_with(prefix))
+impl WhitelistLoadMode {
+    pub fn from_prefix(prefix: &str) -> Option<WhitelistLoadMode> {
+        WhitelistLoadMode::iter().find(|mode| mode.to_string().starts_with(prefix))
     }
 
     pub fn values() -> Vec<String> {
-        OplistLoadMode::iter().map(|m| m.to_string()).collect()
+        WhitelistLoadMode::iter().map(|m| m.to_string()).collect()
     }
 }
 
-impl fmt::Display for OplistLoadMode {
+impl fmt::Display for WhitelistLoadMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                OplistLoadMode::Merge => "merge",
-                OplistLoadMode::Replace => "replace",
+                WhitelistLoadMode::Merge => "merge",
+                WhitelistLoadMode::Replace => "replace",
             }
         )
     }
 }
 
 #[derive(Debug, Clone, PartialEq, EnumProperty, EnumIter, EnumCount)]
-pub enum OplistCommand {
+pub enum WhitelistCommand {
+    #[strum(props(
+        Cmd = "on",
+        Help = "Enable whitelist mode (applies to new connections only)"
+    ))]
+    On,
+
+    #[strum(props(
+        Cmd = "off",
+        Help = "Disable whitelist mode (applies to new connections only)"
+    ))]
+    Off,
+
     #[strum(props(
         Cmd = "add",
         Args = "<user | key>...",
-        Help = "Add users or keys to the operators list"
+        Help = "Add users or keys to the trusted keys"
     ))]
     Add(String),
 
     #[strum(props(
         Cmd = "remove",
         Args = "<user | key>...",
-        Help = "Remove users or keys from the operators list"
+        Help = "Remove users or keys from the trusted keys"
     ))]
     Remove(String),
 
     #[strum(props(
         Cmd = "load",
         Args = "merge | replace",
-        Help = "Load public keys from oplist file and merge it with or replace the in-memory data"
+        Help = "Load public keys from whitelist file and merge it with or replace the in-memory data"
     ))]
-    Load(OplistLoadMode),
+    Load(WhitelistLoadMode),
 
     #[strum(props(
         Cmd = "save",
-        Help = "Export public keys to the oplist file, overwriting the existing file content"
+        Help = "Export public keys to the whitelist file, overwriting the existing file content"
     ))]
     Save,
+
+    #[strum(props(Cmd = "reverify", Help = "Kick all users not in the whitelist"))]
+    Reverify,
 
     #[strum(props(Cmd = "status", Help = "Show status information"))]
     Status,
@@ -76,12 +92,12 @@ pub enum OplistCommand {
     Help,
 }
 
-impl FromStr for OplistCommand {
+impl FromStr for WhitelistCommand {
     type Err = CommandParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s.is_empty() {
-            return Err(Self::Err::ArgumentExpected(format!("oplist command")));
+            return Err(Self::Err::ArgumentExpected(format!("whitelist command")));
         };
 
         let (cmd, args) = if let Some((cmd, args)) = s.split_once(' ') {
@@ -90,7 +106,10 @@ impl FromStr for OplistCommand {
             (s, "")
         };
         match cmd.as_bytes() {
+            b"on" => Ok(Self::On),
+            b"off" => Ok(Self::Off),
             b"save" => Ok(Self::Save),
+            b"reverify" => Ok(Self::Reverify),
             b"status" => Ok(Self::Status),
             b"help" => Ok(Self::Help),
             b"add" => match args.is_empty() {
@@ -105,11 +124,11 @@ impl FromStr for OplistCommand {
                 ))),
                 false => Ok(Self::Remove(args.to_string())),
             },
-            b"load" => match args.parse::<OplistLoadMode>() {
+            b"load" => match args.parse::<WhitelistLoadMode>() {
                 Ok(mode) => Ok(Self::Load(mode)),
                 Err(_) => Err(Self::Err::Other(format!(
                     "load mode value must be one of: {}",
-                    OplistLoadMode::values().join(", ")
+                    WhitelistLoadMode::values().join(", ")
                 ))),
             },
             _ => Err(Self::Err::UnknownCommand),
@@ -117,13 +136,13 @@ impl FromStr for OplistCommand {
     }
 }
 
-impl Default for OplistCommand {
+impl Default for WhitelistCommand {
     fn default() -> Self {
         Self::Help
     }
 }
 
-impl CommandProps for OplistCommand {
+impl CommandProps for WhitelistCommand {
     fn cmd(&self) -> &str {
         self.get_str("Cmd").unwrap_or_default()
     }

@@ -14,6 +14,7 @@ use super::timestamp_mode::TimestampMode;
 pub struct User {
     pub id: usize,
     pub username: String,
+    pub display_name: String,
     pub status: UserStatus,
     pub joined_at: DateTime<Utc>,
     pub ssh_client: String,
@@ -36,9 +37,13 @@ impl User {
         key: Option<PublicKey>,
         is_op: bool,
     ) -> Self {
+        let theme = UserTheme::default();
+        let display_name = theme.style_username(&username).to_string();
         Self {
             id,
             username,
+            display_name,
+            theme,
             ssh_client,
             is_op,
             public_key: key,
@@ -47,7 +52,6 @@ impl User {
             quiet: false,
             is_muted: false,
             status: Default::default(),
-            theme: Default::default(),
             timestamp_mode: Default::default(),
             ignored: BTreeSet::new(),
             focused: BTreeSet::new(),
@@ -77,8 +81,14 @@ impl User {
         self.status = UserStatus::Active;
     }
 
-    pub fn set_new_name(&mut self, username: String) {
+    pub fn set_username(&mut self, username: String) {
         self.username = username;
+        self.update_display_name();
+    }
+
+    pub fn set_theme(&mut self, theme: UserTheme) {
+        self.theme = theme;
+        self.update_display_name();
     }
 
     pub fn joined_duration(&self) -> Duration {
@@ -109,6 +119,10 @@ impl User {
         let number: u16 = rng.gen_range(1..=9999);
 
         format!("{}{}{}", adjective, noun, number)
+    }
+
+    fn update_display_name(&mut self) {
+        self.display_name = self.theme.style_username(&self.username).to_string()
     }
 }
 

@@ -2,6 +2,7 @@ mod auth;
 mod ban;
 mod pubkey;
 mod pubkey_file_manager;
+mod set;
 
 pub use auth::Auth;
 pub use ban::{Attribute as BanAttribute, BanQuery};

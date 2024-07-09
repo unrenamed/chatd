@@ -3,9 +3,9 @@ use async_trait::async_trait;
 use super::handler::{into_next, WorkflowHandler};
 use super::WorkflowContext;
 
-use crate::server::room::message;
-use crate::server::terminal::Terminal;
-use crate::server::ServerRoom;
+use crate::auth::Auth;
+use crate::chat::{message, ChatRoom};
+use crate::terminal::Terminal;
 
 const INPUT_MAX_LEN: usize = 1024;
 
@@ -29,7 +29,8 @@ impl WorkflowHandler for InputValidator {
         &mut self,
         context: &mut WorkflowContext,
         terminal: &mut Terminal,
-        room: &mut ServerRoom,
+        room: &mut ChatRoom,
+        auth: &mut Auth,
     ) -> anyhow::Result<()> {
         let input_str = terminal.input.to_string();
         if input_str.trim().is_empty() {

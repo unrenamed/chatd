@@ -1,18 +1,17 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use log::{trace, error, info, warn};
+use log::{error, info, trace, warn};
 use russh_keys::key::PublicKey;
 use terminal_keycode::KeyCode;
 use tokio::spawn;
 use tokio::sync::mpsc::{self, Receiver};
 use tokio::sync::{watch, Mutex};
 
+use crate::auth::Auth;
+use crate::chat::ChatRoom;
 use crate::server::session_workflow::*;
-use crate::server::terminal::keyboard_decoder;
-use crate::server::terminal::Terminal;
-use crate::server::terminal::TerminalHandle;
-use crate::server::ServerRoom;
+use crate::terminal::{keyboard_decoder, Terminal, TerminalHandle};
 
 type SessionId = usize;
 type SessionSshId = String;
@@ -65,7 +64,7 @@ impl SessionRepository {
         }
     }
 
-    pub async fn wait_for_sessions(&mut self, room: Arc<Mutex<ServerRoom>>) {
+    pub async fn wait_for_sessions(&mut self, room: Arc<Mutex<ChatRoom>>, auth: Arc<Mutex<Auth>>) {
         while let Some(event) = self.repo_event_receiver.recv().await {
             match event {
                 SessionRepositoryEvent::NewSession(
@@ -78,6 +77,7 @@ impl SessionRepository {
                     event_rx,
                 ) => {
                     let room = room.clone();
+                    let auth = auth.clone();
                     let mut terminal = Terminal::new(handle);
                     let (message_tx, message_rx) = mpsc::channel(100);
                     let (exit_tx, exit_rx) = watch::channel(());
@@ -89,11 +89,13 @@ impl SessionRepository {
                                 .join(id, username, is_op, pk, ssh_id, message_tx, exit_tx)
                                 .await;
                             if let Ok(user) = join_result {
-                                terminal.set_prompt(&terminal.get_prompt(&user));
+                                terminal.set_prompt(&user.display_name);
                             }
                         }
-                        Self::handle_session(id, room, terminal, event_rx, message_rx, exit_rx)
-                            .await;
+                        Self::handle_session(
+                            id, room, auth, terminal, event_rx, message_rx, exit_rx,
+                        )
+                        .await;
                     });
                 }
             }
@@ -102,7 +104,8 @@ impl SessionRepository {
 
     async fn handle_session(
         id: SessionId,
-        room: Arc<Mutex<ServerRoom>>,
+        room: Arc<Mutex<ChatRoom>>,
+        auth: Arc<Mutex<Auth>>,
         terminal: Terminal,
         event_rx: Receiver<SessionEvent>,
         message_rx: Receiver<String>,
@@ -114,6 +117,7 @@ impl SessionRepository {
         let session_handle = spawn(Self::process_session_events(
             id,
             room.clone(),
+            auth,
             terminal.clone(),
             event_rx,
             disconnect_tx,
@@ -136,7 +140,8 @@ impl SessionRepository {
 
     async fn process_session_events(
         id: SessionId,
-        room: Arc<Mutex<ServerRoom>>,
+        room: Arc<Mutex<ChatRoom>>,
+        auth: Arc<Mutex<Auth>>,
         terminal: Arc<Mutex<Terminal>>,
         mut event_rx: Receiver<SessionEvent>,
         disconnect_tx: watch::Sender<()>,
@@ -147,6 +152,7 @@ impl SessionRepository {
             match event {
                 SessionEvent::Data(data) => {
                     let mut room = room.lock().await;
+                    let mut auth = auth.lock().await;
                     let mut term = terminal.lock().await;
 
                     let user = room.find_member_by_id(id).user.clone();
@@ -157,8 +163,9 @@ impl SessionRepository {
                         match code {
                             KeyCode::Tab => {
                                 let mut autocomplete = Autocomplete::default();
-                                if let Err(err) =
-                                    autocomplete.execute(&mut ctx, &mut term, &mut room).await
+                                if let Err(err) = autocomplete
+                                    .execute(&mut ctx, &mut term, &mut room, &mut auth)
+                                    .await
                                 {
                                     error!(
                                         "Failed to execute autocomplete workflow for user {}: {}",
@@ -171,8 +178,9 @@ impl SessionRepository {
                                 let command_parser = CommandParser::new(command_executor);
                                 let input_validator = InputValidator::new(command_parser);
                                 let mut rate_checker = InputRateChecker::new(input_validator);
-                                if let Err(err) =
-                                    rate_checker.execute(&mut ctx, &mut term, &mut room).await
+                                if let Err(err) = rate_checker
+                                    .execute(&mut ctx, &mut term, &mut room, &mut auth)
+                                    .await
                                 {
                                     error!(
                                         "Failed to execute command workflow for user {}: {}",
@@ -182,8 +190,9 @@ impl SessionRepository {
                             }
                             _ => {
                                 let mut key_mapper = TerminalKeyMapper::new(code);
-                                if let Err(err) =
-                                    key_mapper.execute(&mut ctx, &mut term, &mut room).await
+                                if let Err(err) = key_mapper
+                                    .execute(&mut ctx, &mut term, &mut room, &mut auth)
+                                    .await
                                 {
                                     error!(
                                         "Failed to execute terminal workflow for user {}: {}",
@@ -196,6 +205,7 @@ impl SessionRepository {
                 }
                 SessionEvent::Env(name, value) => {
                     let mut room = room.lock().await;
+                    let mut auth = auth.lock().await;
                     let mut term = terminal.lock().await;
 
                     let user = room.find_member_by_id(id).user.clone();
@@ -204,7 +214,10 @@ impl SessionRepository {
                     let command_executor = CommandExecutor::default();
                     let command_parser = CommandParser::new(command_executor);
                     let mut env_parser = EnvParser::new(name, value, command_parser);
-                    if let Err(err) = env_parser.execute(&mut ctx, &mut term, &mut room).await {
+                    if let Err(err) = env_parser
+                        .execute(&mut ctx, &mut term, &mut room, &mut auth)
+                        .await
+                    {
                         error!("Failed to execute env workflow for user {}: {}", id, err);
                     }
                 }
@@ -223,7 +236,7 @@ impl SessionRepository {
 
     async fn process_room_events(
         id: SessionId,
-        room: Arc<Mutex<ServerRoom>>,
+        room: Arc<Mutex<ChatRoom>>,
         terminal: Arc<Mutex<Terminal>>,
         mut message_rx: Receiver<String>,
         mut exit_rx: watch::Receiver<()>,

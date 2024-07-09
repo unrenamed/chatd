@@ -1,21 +1,18 @@
 use std::collections::hash_map::{Iter, IterMut};
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use governor::Quota;
 use nonzero_ext::nonzero;
 use russh_keys::key::PublicKey;
-use tokio::sync::{mpsc, watch, Mutex};
+use tokio::sync::{mpsc, watch};
 
 use super::member::RoomMember;
-use super::message::{self, Message};
-use super::message_history::MessageHistory;
 
-use crate::server::ratelimit::RateLimit;
-use crate::server::user::User;
-use crate::server::Auth;
+use crate::chat::message::{self, Message, MessageHistory};
+use crate::chat::ratelimit::RateLimit;
+use crate::chat::user::User;
 use crate::utils::{self, sanitize};
 
 type UserId = usize;
@@ -24,20 +21,18 @@ type UserName = String;
 const MESSAGE_MAX_BURST: std::num::NonZeroU32 = nonzero!(10u32);
 const MESSAGE_RATE_QUOTA: Quota = Quota::per_second(MESSAGE_MAX_BURST);
 
-pub struct ServerRoom {
+pub struct ChatRoom {
     names: HashMap<UserId, UserName>,
     members: HashMap<UserName, RoomMember>,
     ratelims: HashMap<UserId, RateLimit>,
     history: MessageHistory,
     motd: String,
     created_at: DateTime<Utc>,
-    auth: Arc<Mutex<Auth>>,
 }
 
-impl ServerRoom {
-    pub fn new(motd: &str, auth: Arc<Mutex<Auth>>) -> Self {
+impl ChatRoom {
+    pub fn new(motd: &str) -> Self {
         Self {
-            auth,
             names: HashMap::new(),
             members: HashMap::new(),
             ratelims: HashMap::new(),
@@ -59,10 +54,6 @@ impl ServerRoom {
         let now = Utc::now();
         let since_created = now.signed_duration_since(self.created_at).num_seconds() as u64;
         humantime::format_duration(Duration::from_secs(since_created)).to_string()
-    }
-
-    pub fn auth(&self) -> &Arc<Mutex<Auth>> {
-        &self.auth
     }
 
     pub fn get_ratelimit(&self, user_id: UserId) -> Option<&RateLimit> {

@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use enum_dispatch::enum_dispatch;
 use regex::{escape, Regex};
 
-use crate::server::user::User;
+use crate::chat::user::User;
 
 #[enum_dispatch]
 #[derive(Clone)]

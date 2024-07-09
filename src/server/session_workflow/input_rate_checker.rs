@@ -1,8 +1,8 @@
 use async_trait::async_trait;
 
-use crate::server::room::message;
-use crate::server::terminal::Terminal;
-use crate::server::{ratelimit, ServerRoom};
+use crate::auth::Auth;
+use crate::chat::{message, ratelimit, ChatRoom};
+use crate::terminal::Terminal;
 
 use super::handler::{into_next, WorkflowHandler};
 use super::WorkflowContext;
@@ -27,7 +27,8 @@ impl WorkflowHandler for InputRateChecker {
         &mut self,
         context: &mut WorkflowContext,
         terminal: &mut Terminal,
-        room: &mut ServerRoom,
+        room: &mut ChatRoom,
+        auth: &mut Auth,
     ) -> anyhow::Result<()> {
         let no_ratelim_error_msg = format!(
             "User {} should have its own rate-limit in the server room",

@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 
+use crate::auth::Auth;
+use crate::chat::ChatRoom;
 use crate::server::env::Env;
-use crate::server::terminal::Terminal;
-use crate::server::ServerRoom;
+use crate::terminal::Terminal;
 
 use super::handler::{into_next, WorkflowHandler};
 use super::WorkflowContext;
@@ -30,7 +31,8 @@ impl WorkflowHandler for EnvParser {
         &mut self,
         context: &mut WorkflowContext,
         terminal: &mut Terminal,
-        room: &mut ServerRoom,
+        room: &mut ChatRoom,
+        auth: &mut Auth,
     ) -> anyhow::Result<()> {
         let env = match format!("{}={}", self.name, self.value).parse::<Env>() {
             Ok(env) => Some(env),

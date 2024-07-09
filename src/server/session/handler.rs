@@ -15,8 +15,8 @@ use russh_keys::key::PublicKey;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 
-use crate::server::auth;
-use crate::server::terminal::TerminalHandle;
+use crate::auth;
+use crate::terminal::TerminalHandle;
 
 use super::SessionEvent;
 use super::SessionRepositoryEvent;

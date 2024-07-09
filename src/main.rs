@@ -1,15 +1,17 @@
-use std::sync::Arc;
-
+use auth::{Auth, PubKeyFileManager};
+use chat::ChatRoom;
 use clap::Parser;
 use cli::Cli;
 use log::LevelFilter;
 use russh_keys::key::KeyPair;
-use server::PubKeyFileManager;
-use tokio::sync::Mutex;
+use server::{ChatServer, SessionRepository};
 
+mod auth;
+mod chat;
 mod cli;
 mod logger;
 mod server;
+mod terminal;
 mod utils;
 
 #[tokio::main]
@@ -61,7 +63,7 @@ async fn main() {
     let (tx, rx) = tokio::sync::mpsc::channel(1000);
 
     // Initate authorization service
-    let mut auth = server::Auth::default();
+    let mut auth = Auth::default();
     if let Some(whitelist) = whitelist_manager {
         auth.set_whitelist(whitelist);
         auth.enable_whitelist_mode();
@@ -75,10 +77,9 @@ async fn main() {
     }
 
     // Initate server and session repository
-    let auth = Arc::new(Mutex::new(auth));
-    let room = server::ServerRoom::new(&motd, auth.clone());
-    let repository = server::SessionRepository::new(rx);
-    let mut server = server::AppServer::new(cli.port, auth.clone(), room, &server_keys, tx);
+    let room = ChatRoom::new(&motd);
+    let repository = SessionRepository::new(rx);
+    let mut server = ChatServer::new(cli.port, &server_keys, tx, auth, room);
 
     // Run the server
     server.run(repository).await.expect("Failed running server");

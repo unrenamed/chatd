@@ -1,16 +1,16 @@
 use async_trait::async_trait;
 use std::fmt::Write;
 
-use crate::server::auth::{BanAttribute, BanQuery};
-use crate::server::command::{
+use crate::auth::{Auth, BanAttribute, BanQuery};
+use crate::chat::message;
+use crate::chat::message::Message;
+use crate::chat::ChatRoom;
+use crate::chat::{
     format_commands, Command, CommandProps, OplistCommand, OplistLoadMode, WhitelistCommand,
     WhitelistLoadMode, CHAT_COMMANDS, OPLIST_COMMANDS, WHITELIST_COMMANDS,
 };
-use crate::server::room::message;
-use crate::server::room::message::Message;
-use crate::server::terminal::Terminal;
-use crate::server::user::{Theme, TimestampMode, User, UserStatus};
-use crate::server::ServerRoom;
+use crate::chat::{Theme, TimestampMode, User, UserStatus};
+use crate::terminal::Terminal;
 use crate::utils::{self, sanitize};
 
 use super::handler::WorkflowHandler;
@@ -27,7 +27,8 @@ impl WorkflowHandler for CommandExecutor {
         &mut self,
         context: &mut WorkflowContext,
         terminal: &mut Terminal,
-        room: &mut ServerRoom,
+        room: &mut ChatRoom,
+        auth: &mut Auth,
     ) -> anyhow::Result<()> {
         let command = match &context.command {
             Some(command) => command,
@@ -97,8 +98,8 @@ impl WorkflowHandler for CommandExecutor {
                 let user_id = user.id;
 
                 let member = room.find_member_mut(username);
-                member.user.set_new_name(new_name.clone());
-                terminal.set_prompt(&terminal.get_prompt(&member.user));
+                member.user.set_username(new_name.clone());
+                terminal.set_prompt(&member.user.display_name);
 
                 let member = member.clone();
                 room.add_member(new_name.clone(), member);
@@ -320,9 +321,8 @@ impl WorkflowHandler for CommandExecutor {
             Command::Theme(theme) => {
                 let member = room.find_member_mut(username);
                 let message = message::System::new(user, format!("Set theme: {}", theme));
-
-                member.user.theme = (*theme).into();
-                terminal.set_prompt(&terminal.get_prompt(&member.user));
+                member.user.set_theme((*theme).into());
+                terminal.set_prompt(&member.user.display_name);
                 room.send_message(message.into()).await?;
             }
             Command::Themes => {
@@ -628,7 +628,7 @@ impl WorkflowHandler for CommandExecutor {
                             .filter(|member| member.user.public_key.is_some())
                         {
                             Some(member) => {
-                                room.auth().lock().await.ban_fingerprint(
+                                auth.ban_fingerprint(
                                     &member.user.public_key.as_ref().unwrap().fingerprint(),
                                     duration,
                                 );
@@ -651,7 +651,7 @@ impl WorkflowHandler for CommandExecutor {
                         for item in items {
                             match item.attribute {
                                 BanAttribute::Name(name) => {
-                                    room.auth().lock().await.ban_username(&name, item.duration);
+                                    auth.ban_username(&name, item.duration);
 
                                     for (_, member) in room.members_iter_mut() {
                                         if member.user.username.eq(&name) {
@@ -665,10 +665,7 @@ impl WorkflowHandler for CommandExecutor {
                                     }
                                 }
                                 BanAttribute::Fingerprint(fingerprint) => {
-                                    room.auth()
-                                        .lock()
-                                        .await
-                                        .ban_fingerprint(&fingerprint, item.duration);
+                                    auth.ban_fingerprint(&fingerprint, item.duration);
 
                                     for (_, member) in room.members_iter_mut() {
                                         if let Some(key) = &member.user.public_key {
@@ -709,7 +706,7 @@ impl WorkflowHandler for CommandExecutor {
                     break 'label;
                 }
 
-                let (names, fingerprints) = room.auth().lock().await.banned();
+                let (names, fingerprints) = auth.banned();
                 let mut banned = String::new();
                 write!(banned, "Banned:").expect("Failed to write banned members to string");
 
@@ -733,7 +730,7 @@ impl WorkflowHandler for CommandExecutor {
                     break 'label;
                 }
 
-                exec_whitelist_command(command, &user, room).await?;
+                exec_whitelist_command(command, &user, room, auth).await?;
             }
             Command::Oplist(command) => 'label: {
                 if !user.is_op {
@@ -742,7 +739,7 @@ impl WorkflowHandler for CommandExecutor {
                     break 'label;
                 }
 
-                exec_oplist_command(command, &user, room).await?;
+                exec_oplist_command(command, &user, room, auth).await?;
             }
         }
 
@@ -757,11 +754,12 @@ impl WorkflowHandler for CommandExecutor {
 async fn exec_whitelist_command(
     command: &WhitelistCommand,
     user: &User,
-    room: &mut ServerRoom,
+    room: &mut ChatRoom,
+    auth: &mut Auth,
 ) -> anyhow::Result<()> {
     match command {
         WhitelistCommand::On => {
-            room.auth().lock().await.enable_whitelist_mode();
+            auth.enable_whitelist_mode();
             let message = message::System::new(
                 user.clone(),
                 "Server whitelisting is now enabled".to_string(),
@@ -769,7 +767,7 @@ async fn exec_whitelist_command(
             room.send_message(message.into()).await?;
         }
         WhitelistCommand::Off => {
-            room.auth().lock().await.disable_whitelist_mode();
+            auth.disable_whitelist_mode();
             let message = message::System::new(
                 user.clone(),
                 "Server whitelisting is now disabled".to_string(),
@@ -791,7 +789,7 @@ async fn exec_whitelist_command(
                 if is_key {
                     let key = user_or_key;
                     match russh_keys::parse_public_key_base64(&key) {
-                        Ok(pk) => room.auth().lock().await.add_trusted_key(pk),
+                        Ok(pk) => auth.add_trusted_key(pk),
                         Err(_) => invalid_keys.push(key.to_string()),
                     }
                     is_key = false;
@@ -799,7 +797,7 @@ async fn exec_whitelist_command(
                     let user = user_or_key;
                     match room.try_find_member(user).map(|m| &m.user) {
                         Some(user) => match &user.public_key {
-                            Some(pk) => room.auth().lock().await.add_trusted_key(pk.clone()),
+                            Some(pk) => auth.add_trusted_key(pk.clone()),
                             None => no_key_users.push(user.to_string()),
                         },
                         None => invalid_users.push(user.to_string()),
@@ -843,7 +841,7 @@ async fn exec_whitelist_command(
                 if is_key {
                     let key = user_or_key;
                     match russh_keys::parse_public_key_base64(&key) {
-                        Ok(pk) => room.auth().lock().await.remove_trusted_key(pk),
+                        Ok(pk) => auth.remove_trusted_key(pk),
                         Err(_) => invalid_keys.push(key.to_string()),
                     }
                     is_key = false;
@@ -851,7 +849,7 @@ async fn exec_whitelist_command(
                     let user = user_or_key;
                     match room.try_find_member(user).map(|m| &m.user) {
                         Some(user) => match &user.public_key {
-                            Some(pk) => room.auth().lock().await.remove_trusted_key(pk.clone()),
+                            Some(pk) => auth.remove_trusted_key(pk.clone()),
                             None => no_key_users.push(user.to_string()),
                         },
                         None => invalid_users.push(user.to_string()),
@@ -882,9 +880,9 @@ async fn exec_whitelist_command(
         }
         WhitelistCommand::Load(mode) => {
             if *mode == WhitelistLoadMode::Replace {
-                room.auth().lock().await.clear_trusted_keys();
+                auth.clear_trusted_keys();
             }
-            let message: Message = match room.auth().lock().await.load_trusted_keys() {
+            let message: Message = match auth.load_trusted_keys() {
                 Ok(_) => {
                     let body = "Trusted keys are up-to-date with the whitelist file".to_string();
                     message::System::new(user.clone(), body).into()
@@ -897,7 +895,7 @@ async fn exec_whitelist_command(
             room.send_message(message).await?;
         }
         WhitelistCommand::Save => {
-            let message: Message = match room.auth().lock().await.save_trusted_keys() {
+            let message: Message = match auth.save_trusted_keys() {
                 Ok(_) => {
                     let body = "Whitelist file is up-to-date with the trusted keys".to_string();
                     message::System::new(user.clone(), body).into()
@@ -910,7 +908,7 @@ async fn exec_whitelist_command(
             room.send_message(message).await?;
         }
         WhitelistCommand::Reverify => 'label: {
-            if !room.auth().lock().await.is_whitelist_enabled() {
+            if !auth.is_whitelist_enabled() {
                 let message = message::System::new(
                     user.clone(),
                     "Whitelist is disabled, so nobody will be kicked".to_string(),
@@ -919,7 +917,7 @@ async fn exec_whitelist_command(
                 break 'label;
             }
 
-            let auth = room.auth().lock().await;
+            let auth = auth;
             let mut kicked = vec![];
             for (_, member) in room.members_iter() {
                 if member.user.public_key.is_none()
@@ -933,7 +931,6 @@ async fn exec_whitelist_command(
                     member.exit()?;
                 }
             }
-            drop(auth);
 
             for user in kicked {
                 let message = message::Announce::new(
@@ -944,7 +941,7 @@ async fn exec_whitelist_command(
             }
         }
         WhitelistCommand::Status => {
-            let auth = room.auth().lock().await;
+            let auth = auth;
             let mut messages: Vec<String> = vec![];
 
             messages.push(
@@ -981,8 +978,6 @@ async fn exec_whitelist_command(
                 messages.push(format!("Trusted offline keys: {}", trusted_keys.join(", ")));
             }
 
-            drop(auth);
-
             let message = message::System::new(user.clone(), messages.join(utils::NEWLINE));
             room.send_message(message.into()).await?;
         }
@@ -1008,7 +1003,8 @@ async fn exec_whitelist_command(
 async fn exec_oplist_command(
     command: &OplistCommand,
     user: &User,
-    room: &mut ServerRoom,
+    room: &mut ChatRoom,
+    auth: &mut Auth,
 ) -> anyhow::Result<()> {
     match command {
         OplistCommand::Add(users_or_keys) => {
@@ -1026,7 +1022,7 @@ async fn exec_oplist_command(
                 if is_key {
                     let key = user_or_key;
                     match russh_keys::parse_public_key_base64(&key) {
-                        Ok(pk) => room.auth().lock().await.add_operator(pk),
+                        Ok(pk) => auth.add_operator(pk),
                         Err(_) => invalid_keys.push(key.to_string()),
                     }
                     is_key = false;
@@ -1034,7 +1030,7 @@ async fn exec_oplist_command(
                     let user = user_or_key;
                     match room.try_find_member(user).map(|m| &m.user) {
                         Some(user) => match &user.public_key {
-                            Some(pk) => room.auth().lock().await.add_operator(pk.clone()),
+                            Some(pk) => auth.add_operator(pk.clone()),
                             None => no_key_users.push(user.to_string()),
                         },
                         None => invalid_users.push(user.to_string()),
@@ -1085,7 +1081,7 @@ async fn exec_oplist_command(
                 if is_key {
                     let key = user_or_key;
                     match russh_keys::parse_public_key_base64(&key) {
-                        Ok(pk) => room.auth().lock().await.remove_operator(pk),
+                        Ok(pk) => auth.remove_operator(pk),
                         Err(_) => invalid_keys.push(key.to_string()),
                     }
                     is_key = false;
@@ -1093,7 +1089,7 @@ async fn exec_oplist_command(
                     let user = user_or_key;
                     match room.try_find_member(user).map(|m| &m.user) {
                         Some(user) => match &user.public_key {
-                            Some(pk) => room.auth().lock().await.remove_operator(pk.clone()),
+                            Some(pk) => auth.remove_operator(pk.clone()),
                             None => no_key_users.push(user.to_string()),
                         },
                         None => invalid_users.push(user.to_string()),
@@ -1131,9 +1127,9 @@ async fn exec_oplist_command(
         }
         OplistCommand::Load(mode) => {
             if *mode == OplistLoadMode::Replace {
-                room.auth().lock().await.clear_operators();
+                auth.clear_operators();
             }
-            let message: Message = match room.auth().lock().await.load_operators() {
+            let message: Message = match auth.load_operators() {
                 Ok(_) => {
                     let body = "Operators keys are up-to-date with the oplist file".to_string();
                     message::System::new(user.clone(), body).into()
@@ -1146,7 +1142,7 @@ async fn exec_oplist_command(
             room.send_message(message).await?;
         }
         OplistCommand::Save => {
-            let message: Message = match room.auth().lock().await.save_operators() {
+            let message: Message = match auth.save_operators() {
                 Ok(_) => {
                     let body = "Oplist file is up-to-date with the operators".to_string();
                     message::System::new(user.clone(), body).into()
@@ -1159,7 +1155,7 @@ async fn exec_oplist_command(
             room.send_message(message).await?;
         }
         OplistCommand::Status => {
-            let auth = room.auth().lock().await;
+            let auth = auth;
             let mut messages: Vec<String> = vec![];
             let mut online_operators = vec![];
             let mut offline_keys = vec![];
@@ -1186,8 +1182,6 @@ async fn exec_oplist_command(
                     offline_keys.join(", ")
                 ));
             }
-
-            drop(auth);
 
             let message = message::System::new(user.clone(), messages.join(utils::NEWLINE));
             room.send_message(message.into()).await?;

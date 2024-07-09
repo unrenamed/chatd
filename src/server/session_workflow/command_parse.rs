@@ -1,10 +1,9 @@
 use async_trait::async_trait;
 use chrono::Utc;
 
-use crate::server::command::{Command, CommandParseError};
-use crate::server::room::message;
-use crate::server::terminal::Terminal;
-use crate::server::ServerRoom;
+use crate::auth::Auth;
+use crate::chat::{message, Command, CommandParseError, ChatRoom};
+use crate::terminal::Terminal;
 
 use super::handler::{into_next, WorkflowHandler};
 use super::WorkflowContext;
@@ -29,7 +28,8 @@ impl WorkflowHandler for CommandParser {
         &mut self,
         context: &mut WorkflowContext,
         terminal: &mut Terminal,
-        room: &mut ServerRoom,
+        room: &mut ChatRoom,
+        auth: &mut Auth,
     ) -> anyhow::Result<()> {
         let user = context.user.clone();
 

@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 use terminal_keycode::KeyCode;
 
-use crate::server::terminal::Terminal;
-use crate::server::ServerRoom;
+use crate::auth::Auth;
+use crate::chat::ChatRoom;
+use crate::terminal::Terminal;
 
 use super::handler::WorkflowHandler;
 use super::WorkflowContext;
@@ -25,7 +26,8 @@ impl WorkflowHandler for TerminalKeyMapper {
         &mut self,
         context: &mut WorkflowContext,
         terminal: &mut Terminal,
-        room: &mut ServerRoom,
+        room: &mut ChatRoom,
+        auth: &mut Auth,
     ) -> anyhow::Result<()> {
         match self.key {
             KeyCode::Backspace => {

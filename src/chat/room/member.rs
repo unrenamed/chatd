@@ -1,11 +1,9 @@
 use chrono::{DateTime, Utc};
 use tokio::sync::{mpsc, watch};
 
-use crate::server::room::message;
-use crate::server::room::message::Message;
-use crate::server::user::User;
-
-use super::message::MessageFormatter;
+use crate::chat::message::Message;
+use crate::chat::message::{self, MessageFormatter};
+use crate::chat::user::User;
 
 #[derive(Clone)]
 pub struct RoomMember {

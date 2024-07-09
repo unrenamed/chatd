@@ -1,8 +1,7 @@
-use crate::utils;
-
-use super::input_history::InputHistory;
 use std::fmt::Display;
 use unicode_segmentation::UnicodeSegmentation;
+
+use super::{input_history::InputHistory, unicode};
 
 const MAX_HISTORY_SIZE: usize = 20;
 
@@ -130,7 +129,7 @@ impl TerminalInput {
         self.state.char_count = graphemes.len();
         self.state.cursor_byte_pos = new_cursor_byte_pos;
         self.calc_new_cursor_char_pos();
-        self.state.display_width = utils::display_width(&self.state.text);
+        self.state.display_width = unicode::display_width(&self.state.text);
     }
 
     // Remove character before cursor position
@@ -147,7 +146,7 @@ impl TerminalInput {
 
         self.state.text.drain(start..start + remove_len);
         self.state.char_count -= 1;
-        self.state.display_width = utils::display_width(&self.state.text);
+        self.state.display_width = unicode::display_width(&self.state.text);
     }
 
     // Remove last word before cursor position
@@ -185,7 +184,7 @@ impl TerminalInput {
 
             let total_char_count = self.state.text.graphemes(true).count();
             self.state.char_count = total_char_count;
-            self.state.display_width = utils::display_width(&self.text());
+            self.state.display_width = unicode::display_width(&self.text());
 
             self.state.cursor_char_pos = word_start;
             self.calc_new_cursor_byte_pos();
@@ -202,7 +201,7 @@ impl TerminalInput {
             self.make_snapshot_from(prev);
             let total_char_count = self.state.text.graphemes(true).count();
             self.state.char_count = total_char_count;
-            self.state.display_width = utils::display_width(&self.state.text);
+            self.state.display_width = unicode::display_width(&self.state.text);
         }
     }
 

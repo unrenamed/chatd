@@ -1,11 +1,12 @@
 use std::str::FromStr;
 use strum::{EnumCount, EnumIter, EnumProperty};
 
+use crate::chat::user::{Theme, TimestampMode};
+
+use super::command_props::CommandProps;
+use super::parse_error::CommandParseError;
 use super::whitelist_command::WhitelistCommand;
 use super::OplistCommand;
-use super::{command_props::CommandProps, parse_error::CommandParseError};
-
-use crate::server::user::{Theme, TimestampMode};
 
 #[derive(Debug, Clone, PartialEq, EnumProperty, EnumIter, EnumCount)]
 pub enum Command {

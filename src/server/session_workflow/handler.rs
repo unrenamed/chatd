@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 
-use crate::server::{terminal::Terminal, ServerRoom};
+use crate::auth::Auth;
+use crate::chat::ChatRoom;
+use crate::terminal::Terminal;
 
 use super::WorkflowContext;
 
@@ -12,11 +14,12 @@ pub trait WorkflowHandler: Send + Sync {
         &mut self,
         context: &mut WorkflowContext,
         terminal: &mut Terminal,
-        room: &mut ServerRoom,
+        room: &mut ChatRoom,
+        auth: &mut Auth,
     ) -> anyhow::Result<()> {
-        match self.handle(context, terminal, room).await {
+        match self.handle(context, terminal, room, auth).await {
             Ok(_) => match &mut self.next() {
-                Some(next) => next.execute(context, terminal, room).await,
+                Some(next) => next.execute(context, terminal, room, auth).await,
                 None => Ok(()),
             },
             Err(err) => Err(err),
@@ -27,7 +30,8 @@ pub trait WorkflowHandler: Send + Sync {
         &mut self,
         context: &mut WorkflowContext,
         terminal: &mut Terminal,
-        room: &mut ServerRoom,
+        room: &mut ChatRoom,
+        auth: &mut Auth,
     ) -> anyhow::Result<()>;
 
     fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler>>;

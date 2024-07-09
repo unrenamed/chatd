@@ -2,9 +2,8 @@ use russh_keys::key::PublicKey;
 use std::collections::HashSet;
 use std::time::Duration;
 
-use crate::utils::TimedHashSet;
-
 use super::pubkey::PubKey;
+use super::set::TimedHashSet;
 use super::{pubkey_file_manager, PubKeyFileManager};
 
 #[derive(Debug)]
