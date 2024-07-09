@@ -3,14 +3,17 @@ name = "chatd"
 version = "0.1.0"
 edition = "2021"
 authors = ["unrenamed <renkonazbka@gmail.com>"]
-description = "SSH Chat: Real-time communication over SSH"
+description = """
+chatd is an implementation of an SSH server for real-time communication that 
+serves a chat room instead of a shell and provides encrypted messaging over 
+SSH.
+"""
 readme = "README.md"
+license-file = "LICENSE"
 homepage = "https://github.com/unrenamed/chatd"
 repository = "https://github.com/unrenamed/chatd"
 keywords = ["ssh", "chat", "ssh-chat", "ssh-server"]
-categories = ["chats"]
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+categories = ["command-line-utilities", "network-programming"]
 
 [dependencies]
 futures = "0.3.30"
