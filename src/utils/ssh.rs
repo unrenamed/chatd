@@ -19,3 +19,28 @@ pub fn split_ssh_key(key_bytes: &[u8]) -> Option<(String, String)> {
 
     Some((algo, key))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_split_ssh_key_valid() {
+        let key_bytes = b"ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEArO4k9vQ1+..."; // Example SSH key
+        let (algo, key) = split_ssh_key(key_bytes).unwrap();
+        assert_eq!(algo, "ssh-rsa");
+        assert_eq!(key, "AAAAB3NzaC1yc2EAAAABIwAAAQEArO4k9vQ1+...");
+    }
+
+    #[test]
+    fn test_split_ssh_key_invalid_utf8() {
+        let key_bytes = b"\xff\xfe\xfd"; // Invalid UTF-8 bytes
+        assert!(split_ssh_key(key_bytes).is_none());
+    }
+
+    #[test]
+    fn test_split_ssh_key_invalid_format() {
+        let key_bytes = b"ssh-rsa"; // Incomplete SSH key format
+        assert!(split_ssh_key(key_bytes).is_none());
+    }
+}

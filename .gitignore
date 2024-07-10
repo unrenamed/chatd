@@ -2,6 +2,7 @@
 .vscode
 
 # For development env
+coverage
 whitelist
 oplist
 keys/*
