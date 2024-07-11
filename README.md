@@ -26,12 +26,6 @@ This project was greatly influenced by [shazow/ssh-chat](https://github.com/shaz
 - [x] Messaging rate-limit to prevent spam
 - [x] Special commands for operators (`/kick`, `/ban`, `/mute`, etc.)
 
-### CI/CD
-
-- [ ] CI/CD _(optional)_
-- [ ] Unit testing _(optional)_
-- [ ] Benches and performance improvements _(optional)_
-
 ### Quick start
 
 ```console
