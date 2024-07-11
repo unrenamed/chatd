@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use anyhow::Ok;
 use log::{error, info};
 use russh::server::Auth;
 use russh::server::Handler;
@@ -45,6 +44,16 @@ impl ThinHandler {
             repo_event_sender,
             session_event_sender: None,
         }
+    }
+
+    #[cfg(test)]
+    pub fn connect_username(&self) -> &String {
+        &self.connect_username
+    }
+
+    #[cfg(test)]
+    pub fn public_key(&self) -> &Option<PublicKey> {
+        &self.public_key
     }
 }
 
@@ -102,12 +111,16 @@ impl Handler for ThinHandler {
         info!("Public key offered auth request for user {}", user);
 
         let mut auth = self.auth.lock().await;
+        if !auth.is_whitelist_enabled() {
+            return Ok(Auth::Accept);
+        }
+
         if auth.is_trusted(pk) && !auth.check_bans(&user, &pk) {
             return Ok(Auth::Accept);
         }
 
         Ok(Auth::Reject {
-            proceed_with_methods: Some(MethodSet::PUBLICKEY | MethodSet::NONE),
+            proceed_with_methods: Some(MethodSet::PUBLICKEY),
         })
     }
 
@@ -121,28 +134,13 @@ impl Handler for ThinHandler {
         Ok(Auth::Accept)
     }
 
-    async fn auth_none(&mut self, user: &str) -> Result<Auth, Self::Error> {
-        info!("None auth request for user {}", user);
-
-        let auth = self.auth.lock().await;
-        if auth.is_whitelist_enabled() {
-            return Ok(Auth::Reject {
-                proceed_with_methods: Some(MethodSet::PUBLICKEY),
-            });
-        }
-
-        self.connect_username = String::from(user);
-        self.public_key = None;
-        Ok(Auth::Accept)
-    }
-
     async fn auth_password(&mut self, user: &str, password: &str) -> Result<Auth, Self::Error> {
         info!(
             "Password auth request for user {} using credentials {}",
             user, password
         );
         Ok(Auth::Reject {
-            proceed_with_methods: Some(MethodSet::PUBLICKEY | MethodSet::NONE),
+            proceed_with_methods: Some(MethodSet::PUBLICKEY),
         })
     }
 
@@ -155,7 +153,7 @@ impl Handler for ThinHandler {
     ) -> Result<Auth, Self::Error> {
         info!("Keyboard interactive auth request for user {}", user);
         Ok(Auth::Reject {
-            proceed_with_methods: Some(MethodSet::PUBLICKEY | MethodSet::NONE),
+            proceed_with_methods: Some(MethodSet::PUBLICKEY),
         })
     }
 
