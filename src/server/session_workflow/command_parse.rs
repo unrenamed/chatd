@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 
 use crate::auth::Auth;
-use crate::chat::{message, Command, CommandParseError, ChatRoom};
+use crate::chat::{message, ChatRoom, Command, CommandParseError};
 use crate::terminal::Terminal;
 
 use super::handler::{into_next, WorkflowHandler};
