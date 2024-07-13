@@ -11,7 +11,7 @@ use super::theme::UserTheme;
 use super::timestamp_mode::TimestampMode;
 use super::UserName;
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct User {
     pub id: usize,
     pub username: UserName,

@@ -110,7 +110,7 @@ impl Into<UserTheme> for Theme {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct UserTheme {
     text_fg: Color,
     system_text_fg: Color,

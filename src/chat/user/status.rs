@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum UserStatus {
     Active,
     Away {

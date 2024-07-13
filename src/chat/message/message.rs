@@ -5,7 +5,7 @@ use regex::{escape, Regex};
 use crate::chat::user::User;
 
 #[enum_dispatch]
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Message {
     // Sent by a user to everyone; visible to all
     Public,
@@ -39,7 +39,7 @@ pub trait MessageFormatter: Clone {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Public {
     pub created_at: DateTime<Utc>,
     pub from: User,
@@ -76,7 +76,7 @@ impl MessageFormatter for Public {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Private {
     pub created_at: DateTime<Utc>,
     pub from: User,
@@ -117,7 +117,7 @@ impl MessageFormatter for Private {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Emote {
     pub created_at: DateTime<Utc>,
     pub from: User,
@@ -145,7 +145,7 @@ impl MessageFormatter for Emote {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Announce {
     pub created_at: DateTime<Utc>,
     pub from: User,
@@ -173,7 +173,7 @@ impl MessageFormatter for Announce {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct System {
     pub created_at: DateTime<Utc>,
     pub from: User,
@@ -201,7 +201,7 @@ impl MessageFormatter for System {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Error {
     pub created_at: DateTime<Utc>,
     pub from: User,
@@ -229,7 +229,7 @@ impl MessageFormatter for Error {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Command {
     pub created_at: DateTime<Utc>,
     pub from: User,

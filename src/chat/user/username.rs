@@ -3,7 +3,7 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 use std::hash::Hash;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct UserName(String);
 
 impl Distribution<UserName> for Standard {
