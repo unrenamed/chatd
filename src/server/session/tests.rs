@@ -6,9 +6,7 @@ mod handler {
     use async_trait::async_trait;
     use client::Config;
     use futures::Future;
-    use russh::client;
-    use russh::server;
-    use russh::MethodSet;
+    use russh::{client, server, MethodSet};
     use russh_keys::key::{KeyPair, PublicKey};
     use server::{Auth, Config as ServerConfig, Handler};
     use std::sync::Arc;

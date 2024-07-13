@@ -1,15 +1,8 @@
 use std::sync::Arc;
 
 use log::{error, info};
-use russh::server::Auth;
-use russh::server::Handler;
-use russh::server::Msg;
-use russh::server::Response;
-use russh::server::Session;
-use russh::Channel;
-use russh::ChannelId;
-use russh::MethodSet;
-use russh::Pty;
+use russh::server::{Auth, Handler, Msg, Response, Session};
+use russh::{Channel, ChannelId, MethodSet, Pty};
 use russh_keys::key::PublicKey;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
@@ -17,8 +10,7 @@ use tokio::sync::Mutex;
 use crate::auth;
 use crate::terminal::TerminalHandle;
 
-use super::SessionEvent;
-use super::SessionRepositoryEvent;
+use super::{SessionEvent, SessionRepositoryEvent};
 
 /// Server handler. Each client will have their own handler.
 pub struct ThinHandler {
@@ -260,12 +252,15 @@ impl Handler for ThinHandler {
 
 /// Handles cleanup when the connection ends.
 ///
-/// This implementation of `Drop` is primarily designed to gracefully manage unexpected disconnects,
-/// such as when a client abruptly kills the connection without sending a disconnect signal.
+/// This implementation of `Drop` is primarily designed to gracefully
+/// manage unexpected disconnects, such as when a client abruptly
+/// kills the connection without sending a disconnect signal.
 ///
-/// Upon dropping the `ThinHandler`, it will check if there is an associated `session_event_sender`.
-/// This ensures that the disconnection event is properly handled even if the connectionc termination
-/// was before the session is opened (e.g. one of the authenticated methods rejected the connection)
+/// Upon dropping the `ThinHandler`, it will check if there is an
+/// associated `session_event_sender`. This ensures that the
+/// disconnection event is properly handled even if the connectionc
+/// termination was before the session is opened (e.g. one of the
+/// authenticated methods rejected the connection)
 impl Drop for ThinHandler {
     fn drop(&mut self) {
         if let Some(sender) = &self.session_event_sender {

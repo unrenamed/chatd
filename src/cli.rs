@@ -7,7 +7,8 @@ pub struct Cli {
     #[arg(long, default_value_t = 22)]
     pub port: u16,
 
-    /// Private key to identify server with. Defaults to a temporary ed25519 key
+    /// Private key to identify server with. Defaults to a temporary
+    /// ed25519 key
     #[arg(short = 'i', long, value_name = "KEY")]
     pub identity: Option<String>,
 

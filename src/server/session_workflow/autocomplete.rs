@@ -4,12 +4,10 @@ use super::handler::WorkflowHandler;
 use super::WorkflowContext;
 
 use crate::auth::Auth;
-use crate::chat::ChatRoom;
 use crate::chat::{
-    Command, CommandProps, OplistCommand, OplistLoadMode, WhitelistCommand, WhitelistLoadMode,
-    CHAT_COMMANDS, OPLIST_COMMANDS, WHITELIST_COMMANDS,
+    ChatRoom, Command, CommandProps, OplistCommand, OplistLoadMode, Theme, TimestampMode,
+    WhitelistCommand, WhitelistLoadMode, CHAT_COMMANDS, OPLIST_COMMANDS, WHITELIST_COMMANDS,
 };
-use crate::chat::{Theme, TimestampMode};
 use crate::terminal::Terminal;
 
 #[derive(Default)]

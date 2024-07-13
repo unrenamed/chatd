@@ -1,7 +1,5 @@
-use crossterm::cursor;
-use crossterm::queue;
-use crossterm::style;
 use crossterm::terminal::{Clear, ClearType};
+use crossterm::{cursor, queue, style};
 use std::io::Write;
 use unicode_segmentation::UnicodeSegmentation;
 

@@ -217,9 +217,10 @@ mod tests {
 
     #[test]
     fn test_save_keys_encode_error() {
-        // russh_keys::write_public_key_base64 can only fail with IO error
-        // Since the IO error is already handled when opening the file, we
-        // cannot mock russh_keys::write_public_key_base64 to fail.
+        // russh_keys::write_public_key_base64 can only fail with IO
+        // error Since the IO error is already handled when
+        // opening the file, we cannot mock
+        // russh_keys::write_public_key_base64 to fail.
     }
 
     #[test]

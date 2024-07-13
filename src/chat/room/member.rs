@@ -1,8 +1,7 @@
 use chrono::{DateTime, Utc};
 use tokio::sync::{mpsc, watch};
 
-use crate::chat::message::Message;
-use crate::chat::message::{self, MessageFormatter};
+use crate::chat::message::{self, Message, MessageFormatter};
 use crate::chat::user::User;
 
 #[derive(Clone)]

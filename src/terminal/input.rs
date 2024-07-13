@@ -1,7 +1,8 @@
 use std::fmt::Display;
 use unicode_segmentation::UnicodeSegmentation;
 
-use super::{input_history::InputHistory, unicode};
+use super::input_history::InputHistory;
+use super::unicode;
 
 const MAX_HISTORY_SIZE: usize = 20;
 
@@ -15,12 +16,14 @@ struct InputState {
     cursor_byte_pos: usize,
 }
 
-// Struct representing user input with snapshot capability and input history
+// Struct representing user input with snapshot capability and input
+// history
 #[derive(Clone, Debug, Default)]
 pub struct TerminalInput {
     state: InputState,                                   // Current input state
     snapshot: Option<InputState>,                        // Snapshot of previous state
-    history: InputHistory<InputState, MAX_HISTORY_SIZE>, // Records the history of inputs made by the user
+    history: InputHistory<InputState, MAX_HISTORY_SIZE>, /* Records the history of inputs made
+                                                          * by the user */
 }
 
 impl Display for TerminalInput {
@@ -211,7 +214,8 @@ impl TerminalInput {
     }
 
     // Sets the current state to the previous state in the input history.
-    // If there is no current navigation index in the history, it first takes a snapshot of the current state
+    // If there is no current navigation index in the history, it first
+    // takes a snapshot of the current state
     pub fn set_history_prev(&mut self) {
         if self.history.nav_index().is_none() {
             self.make_snapshot();

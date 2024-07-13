@@ -13,7 +13,8 @@ impl<T: Default + Clone, const N: usize> InputHistory<T, N> {
 
     pub fn push(&mut self, item: T) {
         self.history.push_back(item);
-        self.nav_index = None; // Reset navigation index when a new command is added
+        self.nav_index = None; // Reset navigation index when a new
+                               // command is added
     }
 
     pub fn prev(&mut self) -> Option<&T> {

@@ -1,5 +1,6 @@
 use humantime;
-use std::{str::FromStr, time::Duration};
+use std::str::FromStr;
+use std::time::Duration;
 
 #[derive(Debug, PartialEq)]
 struct BanDuration(Duration);

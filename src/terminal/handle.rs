@@ -1,5 +1,6 @@
 use log::{error, trace};
-use russh::{server::Handle, ChannelId};
+use russh::server::Handle;
+use russh::ChannelId;
 
 #[derive(Clone)]
 pub struct TerminalHandle {
