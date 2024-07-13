@@ -13,10 +13,10 @@ use super::member::RoomMember;
 use crate::chat::message::{self, Message, MessageHistory};
 use crate::chat::ratelimit::RateLimit;
 use crate::chat::user::User;
+use crate::chat::user::UserName;
 use crate::utils::{self, sanitize};
 
 type UserId = usize;
-type UserName = String;
 
 const MESSAGE_MAX_BURST: std::num::NonZeroU32 = nonzero!(10u32);
 const MESSAGE_RATE_QUOTA: Quota = Quota::per_second(MESSAGE_MAX_BURST);
@@ -87,29 +87,29 @@ impl ChatRoom {
     pub async fn join(
         &mut self,
         user_id: UserId,
-        username: UserName,
+        username: String,
         is_op: bool,
         key: Option<PublicKey>,
         ssh_id: String,
         message_tx: mpsc::Sender<String>,
         exit_tx: watch::Sender<()>,
     ) -> anyhow::Result<User> {
-        let name = match self.is_room_member(&username) {
-            true => User::gen_rand_name(),
-            false if username.trim().is_empty() => User::gen_rand_name(),
-            false => sanitize::name(&username),
+        let username = match self.is_room_member(&username) {
+            true => rand::random::<UserName>(),
+            false if username.trim().is_empty() => rand::random::<UserName>(),
+            false => sanitize::name(&username).into(),
         };
 
-        let user = User::new(user_id, name.clone(), ssh_id, key, is_op);
+        let user = User::new(user_id, username.clone(), ssh_id, key, is_op);
         let member = RoomMember::new(user.clone(), message_tx, exit_tx);
 
-        self.members.insert(name.clone(), member);
-        self.names.insert(user_id, name.clone());
+        self.members.insert(username.clone(), member);
+        self.names.insert(user_id, username.clone());
         self.ratelims
             .insert(user_id, RateLimit::direct(MESSAGE_RATE_QUOTA));
 
-        self.send_motd(&name).await;
-        self.feed_history(&name).await;
+        self.send_motd(&username).await;
+        self.feed_history(&username).await;
 
         let message = message::Announce::new(
             user.clone(),
@@ -268,45 +268,45 @@ impl ChatRoom {
         // Sort in descending order (recently active first)
         members.sort_by(|a, b| b.last_sent_time().cmp(&a.last_sent_time()));
 
-        let names: Vec<&String> = members.iter().map(|m| &m.user.username).collect();
+        let names: Vec<&UserName> = members.iter().map(|m| &m.user.username).collect();
         if names.is_empty() {
             return None;
         } else if names[0] != skip {
-            return Some(names[0].clone());
+            return Some(names[0].as_ref().into());
         } else if names.len() > 1 {
-            return Some(names[1].clone());
+            return Some(names[1].as_ref().into());
         }
         None
     }
 
     pub fn is_room_member(&self, username: &str) -> bool {
-        self.members.contains_key(username)
+        self.members.contains_key(&username.into())
     }
 
-    pub fn find_member(&self, username: &str) -> &RoomMember {
+    pub fn find_member(&self, username: &UserName) -> &RoomMember {
         self.members
-            .get(username)
+            .get(&username)
             .expect(format!("User {username} should be a member of the server room").as_str())
     }
 
-    pub fn find_member_mut(&mut self, username: &str) -> &mut RoomMember {
+    pub fn find_member_mut(&mut self, username: &UserName) -> &mut RoomMember {
         self.members
-            .get_mut(username)
+            .get_mut(&username)
             .expect(format!("User {username} should be a member of the server room").as_str())
     }
 
     pub fn find_member_by_id(&mut self, user_id: UserId) -> &RoomMember {
         self.try_get_name(&user_id)
-            .and_then(|name| self.try_find_member(name))
+            .and_then(|name| self.try_find_member(&name))
             .expect(format!("User {user_id} should be a member of the server room").as_str())
     }
 
-    pub fn try_find_member(&self, username: &str) -> Option<&RoomMember> {
-        self.members.get(username)
+    pub fn try_find_member(&self, username: &UserName) -> Option<&RoomMember> {
+        self.members.get(&username)
     }
 
-    pub fn try_find_member_mut(&mut self, username: &str) -> Option<&mut RoomMember> {
-        self.members.get_mut(username)
+    pub fn try_find_member_mut(&mut self, username: &UserName) -> Option<&mut RoomMember> {
+        self.members.get_mut(&username)
     }
 
     pub fn try_get_name(&self, user_id: &UserId) -> Option<&UserName> {

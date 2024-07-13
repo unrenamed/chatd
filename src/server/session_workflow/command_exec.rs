@@ -5,8 +5,8 @@ use crate::auth::{Auth, BanAttribute, BanQuery};
 use crate::chat::message::Message;
 use crate::chat::{
     format_commands, message, ChatRoom, Command, CommandProps, OplistCommand, OplistLoadMode,
-    Theme, TimestampMode, User, UserStatus, WhitelistCommand, WhitelistLoadMode, CHAT_COMMANDS,
-    OPLIST_COMMANDS, WHITELIST_COMMANDS,
+    Theme, TimestampMode, User, UserName, UserStatus, WhitelistCommand, WhitelistLoadMode,
+    CHAT_COMMANDS, OPLIST_COMMANDS, WHITELIST_COMMANDS,
 };
 use crate::terminal::Terminal;
 use crate::utils::{self, sanitize};
@@ -66,8 +66,9 @@ impl WorkflowHandler for CommandExecutor {
                 let member = room.find_member_mut(username);
                 let user = member.user.clone();
                 let new_name = sanitize::name(&new_name);
+                let new_username = UserName::from(&new_name);
 
-                if user.username == *new_name {
+                if user.username == new_username {
                     let message = message::Error::new(
                         user,
                         "new name is the same as the original".to_string(),
@@ -76,10 +77,10 @@ impl WorkflowHandler for CommandExecutor {
                     break 'label;
                 }
 
-                if let Some(_) = room.try_find_member(&new_name) {
+                if let Some(_) = room.try_find_member(&new_username) {
                     let message = message::Error::new(
                         user,
-                        format!("\"{}\" name is already taken", new_name),
+                        format!("\"{}\" name is already taken", new_username),
                     );
                     room.send_message(message.into()).await?;
                     break 'label;
@@ -87,27 +88,27 @@ impl WorkflowHandler for CommandExecutor {
 
                 let message = message::Announce::new(
                     user.clone(),
-                    format!("user is now known as {}.", new_name),
+                    format!("user is now known as {}.", new_username),
                 );
                 room.send_message(message.into()).await?;
 
-                let new_name = new_name.to_string();
                 let old_name = user.username;
                 let user_id = user.id;
 
                 let member = room.find_member_mut(username);
-                member.user.set_username(new_name.clone());
+                member.user.set_username(new_username.clone());
                 terminal.set_prompt(&member.user.display_name);
 
                 let member = member.clone();
-                room.add_member(new_name.clone(), member);
+                room.add_member(new_username.clone(), member);
                 room.remove_member(&old_name);
-                room.add_name(user_id, new_name);
+                room.add_name(user_id, new_username);
             }
-            Command::Msg(to, msg) => 'label: {
+            Command::Msg(to_username, msg) => 'label: {
                 let from = room.find_member(username).user.clone();
+                let to_username = UserName::from(to_username);
 
-                match room.try_find_member_mut(&to).map(|a| &mut a.user) {
+                match room.try_find_member_mut(&to_username).map(|a| &mut a.user) {
                     None => {
                         let message =
                             message::Error::new(from.clone(), format!("user is not found"));
@@ -177,7 +178,7 @@ impl WorkflowHandler for CommandExecutor {
                 let member = room.find_member(username);
                 let user = member.user.clone();
 
-                let mut usernames = room.names().values().collect::<Vec<&String>>();
+                let mut usernames = room.names().values().collect::<Vec<&UserName>>();
                 usernames.sort_by_key(|a| a.to_lowercase());
 
                 let colorized_names = usernames
@@ -194,11 +195,12 @@ impl WorkflowHandler for CommandExecutor {
                 let message = message::System::new(user, body);
                 room.send_message(message.into()).await?;
             }
-            Command::Whois(target_name) => {
+            Command::Whois(target_username) => {
                 let member = room.find_member(username);
                 let user = member.user.clone();
+                let target_username = UserName::from(target_username);
                 let message = match room
-                    .try_find_member(&target_name)
+                    .try_find_member(&target_username)
                     .map(|member| &member.user)
                 {
                     Some(target) => message::System::new(user, target.to_string()).into(),
@@ -206,11 +208,11 @@ impl WorkflowHandler for CommandExecutor {
                 };
                 room.send_message(message).await?;
             }
-            Command::Slap(target_name) => 'label: {
+            Command::Slap(target_username) => 'label: {
                 let member = room.find_member(username);
                 let user = member.user.clone();
 
-                if target_name.is_none() {
+                if target_username.is_none() {
                     let message = message::Emote::new(
                         user,
                         "hits himself with a squishy banana.".to_string(),
@@ -219,9 +221,9 @@ impl WorkflowHandler for CommandExecutor {
                     break 'label;
                 }
 
-                let target_name = target_name.as_deref().unwrap();
+                let target_username = UserName::from(target_username.as_deref().unwrap());
                 let target = room
-                    .try_find_member_mut(&target_name)
+                    .try_find_member_mut(&target_username)
                     .map(|member| &member.user);
 
                 let message = if let Some(t) = target {
@@ -358,7 +360,7 @@ impl WorkflowHandler for CommandExecutor {
                     break 'label;
                 }
 
-                let target_username = target.as_deref().unwrap();
+                let target_username = UserName::from(target.as_deref().unwrap());
                 match room
                     .try_find_member(&target_username)
                     .map(|a| a.user.id.clone())
@@ -400,6 +402,7 @@ impl WorkflowHandler for CommandExecutor {
                 let member = room.find_member(username);
                 let user = member.user.clone();
 
+                let target_username = UserName::from(target_username);
                 match room
                     .try_find_member(&target_username)
                     .map(|a| a.user.id.clone())
@@ -467,9 +470,10 @@ impl WorkflowHandler for CommandExecutor {
                 }
 
                 let mut focused = vec![];
-                for target_name in target.split(",") {
+                for target_username in target.split(",") {
+                    let target_username = UserName::from(target_username);
                     match room
-                        .try_find_member(&target_name.to_string())
+                        .try_find_member(&target_username)
                         .map(|a| a.user.id.clone())
                     {
                         None => continue,
@@ -481,7 +485,7 @@ impl WorkflowHandler for CommandExecutor {
                                 .focused
                                 .insert(target_id);
 
-                            focused.push(target_name);
+                            focused.push(target_username);
                         }
                     }
                 }
@@ -518,6 +522,7 @@ impl WorkflowHandler for CommandExecutor {
                     break 'label;
                 }
 
+                let target_username = UserName::from(target_username);
                 match room
                     .try_find_member_mut(&target_username)
                     .map(|a| &mut a.user)
@@ -587,6 +592,7 @@ impl WorkflowHandler for CommandExecutor {
                     break 'label;
                 }
 
+                let target_username = UserName::from(target_username);
                 match room.try_find_member_mut(&target_username) {
                     None => {
                         let message = message::Error::new(user, "user not found".to_string());
@@ -621,8 +627,9 @@ impl WorkflowHandler for CommandExecutor {
 
                 match query.unwrap() {
                     BanQuery::Single { name, duration } => {
+                        let target_username = UserName::from(&name);
                         match room
-                            .try_find_member(&name)
+                            .try_find_member(&target_username)
                             .filter(|member| member.user.public_key.is_some())
                         {
                             Some(member) => {
@@ -649,13 +656,14 @@ impl WorkflowHandler for CommandExecutor {
                         for item in items {
                             match item.attribute {
                                 BanAttribute::Name(name) => {
-                                    auth.ban_username(&name, item.duration);
+                                    let username = UserName::from(&name);
+                                    auth.ban_username(&username, item.duration);
 
                                     for (_, member) in room.members_iter_mut() {
-                                        if member.user.username.eq(&name) {
+                                        if member.user.username.eq(&username) {
                                             let message = message::Announce::new(
                                                 user.clone(),
-                                                format!("banned {} from the server", name),
+                                                format!("banned {} from the server", username),
                                             );
                                             messages.push(message.into());
                                             member.exit()?;
@@ -793,7 +801,8 @@ async fn exec_whitelist_command(
                     is_key = false;
                 } else {
                     let user = user_or_key;
-                    match room.try_find_member(user).map(|m| &m.user) {
+                    let username = UserName::from(user);
+                    match room.try_find_member(&username).map(|m| &m.user) {
                         Some(user) => match &user.public_key {
                             Some(pk) => auth.add_trusted_key(pk.clone()),
                             None => no_key_users.push(user.to_string()),
@@ -845,7 +854,8 @@ async fn exec_whitelist_command(
                     is_key = false;
                 } else {
                     let user = user_or_key;
-                    match room.try_find_member(user).map(|m| &m.user) {
+                    let username = UserName::from(user);
+                    match room.try_find_member(&username).map(|m| &m.user) {
                         Some(user) => match &user.public_key {
                             Some(pk) => auth.remove_trusted_key(pk.clone()),
                             None => no_key_users.push(user.to_string()),
@@ -950,7 +960,7 @@ async fn exec_whitelist_command(
                     },
             );
 
-            let mut trusted_online_users = vec![];
+            let mut trusted_online_users: Vec<String> = vec![];
             let mut trusted_keys = vec![];
 
             for key in auth.trusted_keys() {
@@ -959,7 +969,7 @@ async fn exec_whitelist_command(
                     .map(|(_, m)| &m.user)
                     .find(|u| u.public_key.as_ref().is_some_and(|k| *key == *k))
                 {
-                    trusted_online_users.push(user.username.clone());
+                    trusted_online_users.push(user.username.clone().into());
                 } else {
                     trusted_keys.push(key.fingerprint());
                 }
@@ -1026,14 +1036,15 @@ async fn exec_oplist_command(
                     is_key = false;
                 } else {
                     let user = user_or_key;
-                    match room.try_find_member(user).map(|m| &m.user) {
+                    let username = UserName::from(user);
+                    match room.try_find_member(&username).map(|m| &m.user) {
                         Some(user) => match &user.public_key {
                             Some(pk) => auth.add_operator(pk.clone()),
                             None => no_key_users.push(user.to_string()),
                         },
                         None => invalid_users.push(user.to_string()),
                     }
-                    match room.try_find_member_mut(user).map(|m| &mut m.user) {
+                    match room.try_find_member_mut(&username).map(|m| &mut m.user) {
                         Some(user) => match &user.public_key {
                             Some(_) => user.is_op = true,
                             None => {}
@@ -1085,14 +1096,15 @@ async fn exec_oplist_command(
                     is_key = false;
                 } else {
                     let user = user_or_key;
-                    match room.try_find_member(user).map(|m| &m.user) {
+                    let username = UserName::from(user);
+                    match room.try_find_member(&username).map(|m| &m.user) {
                         Some(user) => match &user.public_key {
                             Some(pk) => auth.remove_operator(pk.clone()),
                             None => no_key_users.push(user.to_string()),
                         },
                         None => invalid_users.push(user.to_string()),
                     }
-                    match room.try_find_member_mut(user).map(|m| &mut m.user) {
+                    match room.try_find_member_mut(&username).map(|m| &mut m.user) {
                         Some(user) => match &user.public_key {
                             Some(_) => user.is_op = false,
                             None => {}
@@ -1155,7 +1167,7 @@ async fn exec_oplist_command(
         OplistCommand::Status => {
             let auth = auth;
             let mut messages: Vec<String> = vec![];
-            let mut online_operators = vec![];
+            let mut online_operators: Vec<String> = vec![];
             let mut offline_keys = vec![];
 
             for key in auth.operators() {
@@ -1164,7 +1176,7 @@ async fn exec_oplist_command(
                     .map(|(_, m)| &m.user)
                     .find(|u| u.public_key.as_ref().is_some_and(|k| *key == *k))
                 {
-                    online_operators.push(user.username.clone());
+                    online_operators.push(user.username.clone().into());
                 } else {
                     offline_keys.push(key.fingerprint());
                 }

@@ -67,7 +67,7 @@ impl MessageFormatter for Public {
             message = re.replace_all(&self.body, replacement).to_string();
         }
 
-        let username = user.theme.style_username(&self.from.username);
+        let username = user.theme.style_username(self.from.username.as_ref());
         format!("{}: {}", username, message)
     }
 
@@ -100,13 +100,13 @@ impl MessageFormatter for Private {
         if user.username.eq(&self.from.username) {
             format!(
                 "[PM to {}] {}",
-                user.theme.style_username(&self.to.username),
+                user.theme.style_username(self.to.username.as_ref()),
                 user.theme.style_text(&self.body)
             )
         } else {
             format!(
                 "[PM from {}] {}",
-                user.theme.style_username(&self.from.username),
+                user.theme.style_username(self.from.username.as_ref()),
                 user.theme.style_text(&self.body)
             )
         }
@@ -136,7 +136,7 @@ impl Emote {
 
 impl MessageFormatter for Emote {
     fn format(&self, user: &User) -> String {
-        let text = format!(" ** {} {}", &self.from.username, &self.body);
+        let text = format!(" ** {} {}", self.from.username, &self.body);
         user.theme.style_text(&text).to_string()
     }
 
@@ -164,7 +164,7 @@ impl Announce {
 
 impl MessageFormatter for Announce {
     fn format(&self, user: &User) -> String {
-        let text = format!(" * {} {}", &self.from.username, &self.body);
+        let text = format!(" * {} {}", self.from.username, &self.body);
         user.theme.style_system_text(&text).to_string()
     }
 
@@ -250,7 +250,7 @@ impl MessageFormatter for Command {
     fn format(&self, user: &User) -> String {
         format!(
             "[{}] {}",
-            user.theme.style_username(&self.from.username),
+            user.theme.style_username(self.from.username.as_ref()),
             user.theme.style_text(&self.body),
         )
     }

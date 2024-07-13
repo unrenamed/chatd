@@ -1,6 +1,4 @@
 use chrono::{DateTime, Utc};
-use rand::seq::SliceRandom;
-use rand::Rng;
 use russh_keys::key::PublicKey;
 use std::collections::BTreeSet;
 use std::fmt::Display;
@@ -11,11 +9,12 @@ use crate::utils;
 use super::status::UserStatus;
 use super::theme::UserTheme;
 use super::timestamp_mode::TimestampMode;
+use super::UserName;
 
 #[derive(Clone, Debug)]
 pub struct User {
     pub id: usize,
-    pub username: String,
+    pub username: UserName,
     pub display_name: String,
     pub status: UserStatus,
     pub joined_at: DateTime<Utc>,
@@ -34,13 +33,13 @@ pub struct User {
 impl User {
     pub fn new(
         id: usize,
-        username: String,
+        username: UserName,
         ssh_client: String,
         key: Option<PublicKey>,
         is_op: bool,
     ) -> Self {
         let theme = UserTheme::default();
-        let display_name = theme.style_username(&username).to_string();
+        let display_name = theme.style_username(username.as_ref()).to_string();
         Self {
             id,
             username,
@@ -83,7 +82,7 @@ impl User {
         self.status = UserStatus::Active;
     }
 
-    pub fn set_username(&mut self, username: String) {
+    pub fn set_username(&mut self, username: UserName) {
         self.username = username;
         self.update_display_name();
     }
@@ -103,28 +102,11 @@ impl User {
         self.reply_to = Some(reply_to);
     }
 
-    pub fn gen_rand_name() -> String {
-        let adjectives = [
-            "Cool", "Mighty", "Brave", "Clever", "Happy", "Calm", "Eager", "Gentle", "Kind",
-            "Jolly", "Swift", "Bold", "Fierce", "Wise", "Valiant", "Bright", "Noble", "Zany",
-            "Epic",
-        ];
-        let nouns = [
-            "Tiger", "Eagle", "Panda", "Shark", "Lion", "Wolf", "Dragon", "Phoenix", "Hawk",
-            "Bear", "Falcon", "Panther", "Griffin", "Lynx", "Orca", "Cobra", "Jaguar", "Kraken",
-            "Pegasus", "Stallion",
-        ];
-
-        let mut rng = rand::thread_rng();
-        let adjective = adjectives.choose(&mut rng).unwrap();
-        let noun = nouns.choose(&mut rng).unwrap();
-        let number: u16 = rng.gen_range(1..=9999);
-
-        format!("{}{}{}", adjective, noun, number)
-    }
-
     fn update_display_name(&mut self) {
-        self.display_name = self.theme.style_username(&self.username).to_string()
+        self.display_name = self
+            .theme
+            .style_username(self.username.as_ref())
+            .to_string()
     }
 }
 

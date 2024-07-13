@@ -75,7 +75,7 @@ impl WorkflowHandler for Autocomplete {
                         while let Some(name) = words_iter.next() {
                             let new_name_end_pos = prev_name_end_pos + name.len();
                             complete_argument(name, prev_name_end_pos, terminal, |prefix| {
-                                room.find_name_by_prefix(prefix, &context.user.username)
+                                room.find_name_by_prefix(prefix, context.user.username.as_ref())
                             })?;
                             prev_name_end_pos = new_name_end_pos;
                         }
@@ -113,7 +113,7 @@ impl WorkflowHandler for Autocomplete {
                         while let Some(name) = words_iter.next() {
                             let new_name_end_pos = prev_name_end_pos + name.len();
                             complete_argument(name, prev_name_end_pos, terminal, |prefix| {
-                                room.find_name_by_prefix(prefix, &context.user.username)
+                                room.find_name_by_prefix(prefix, context.user.username.as_ref())
                             })?;
                             prev_name_end_pos = new_name_end_pos;
                         }
@@ -142,7 +142,7 @@ impl WorkflowHandler for Autocomplete {
             cmd if cmd.args().starts_with("<user>") || cmd.args().starts_with("[user]") => {
                 let user = words_iter.next().unwrap_or_default();
                 complete_argument(user, cmd_end_pos, terminal, |prefix| {
-                    room.find_name_by_prefix(prefix, &context.user.username)
+                    room.find_name_by_prefix(prefix, context.user.username.as_ref())
                 })?;
             }
             _ => {}
