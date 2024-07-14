@@ -57,16 +57,6 @@ impl UserConfig {
         &self.display_name
     }
 
-    pub fn set_highlight(&mut self, text: &str) {
-        let pattern = regex::escape(&text);
-        let regex = regex::Regex::new(&pattern);
-        self.highlight = regex.ok().map(|r| r.into());
-    }
-
-    pub fn set_display_name(&mut self, username: &str) {
-        self.display_name = self.theme.style_username(username).to_string().into();
-    }
-
     pub fn switch_quiet_mode(&mut self) {
         self.quiet = !self.quiet;
     }
@@ -75,7 +65,17 @@ impl UserConfig {
         self.timestamp_mode = mode;
     }
 
-    pub(super) fn set_theme(&mut self, theme: UserTheme) {
+    pub(in crate::chat::user) fn set_highlight(&mut self, text: &str) {
+        let pattern = regex::escape(&text);
+        let regex = regex::Regex::new(&pattern);
+        self.highlight = regex.ok().map(|r| r.into());
+    }
+
+    pub(in crate::chat::user) fn set_display_name(&mut self, username: &str) {
+        self.display_name = self.theme.style_username(username).to_string().into();
+    }
+
+    pub(in crate::chat::user) fn set_theme(&mut self, theme: UserTheme) {
         self.theme = theme;
     }
 }
