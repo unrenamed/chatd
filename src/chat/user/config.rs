@@ -9,7 +9,8 @@ impl HighlightRegex {
         self.0.find(text).map(|m| m.as_str())
     }
 
-    // Method to replace all matches in the text with the replacement string
+    // Method to replace all matches in the text with the replacement
+    // string
     pub fn replace_all(&self, text: &str, replacement: &str) -> String {
         self.0.replace_all(text, replacement).into_owned()
     }
@@ -27,13 +28,27 @@ impl From<regex::Regex> for HighlightRegex {
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UserConfig {
     display_name: DisplayName,
     highlight: Option<HighlightRegex>,
     theme: UserTheme,
     timestamp_mode: TimestampMode,
     quiet: bool,
+    bell: bool,
+}
+
+impl Default for UserConfig {
+    fn default() -> Self {
+        Self {
+            bell: true,
+            quiet: false,
+            highlight: None,
+            display_name: Default::default(),
+            theme: Default::default(),
+            timestamp_mode: Default::default(),
+        }
+    }
 }
 
 impl UserConfig {
@@ -47,6 +62,10 @@ impl UserConfig {
 
     pub fn quiet(&self) -> bool {
         self.quiet
+    }
+
+    pub fn bell(&self) -> bool {
+        self.bell
     }
 
     pub fn timestamp_mode(&self) -> &TimestampMode {

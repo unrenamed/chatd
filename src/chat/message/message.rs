@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use enum_dispatch::enum_dispatch;
 
 use crate::chat::UserConfig;
+use crate::utils::{BEL, NULL};
 
 use super::{Author, Recipient};
 
@@ -150,9 +151,14 @@ impl MessageBaseOps for Private {
 impl MessageFormatter for Private {
     fn format(&self, cfg: &UserConfig) -> String {
         format!(
-            "[PM from {}] {}",
+            "[PM from {}] {}{}",
             cfg.theme().style_username(self.from.username().as_ref()),
-            cfg.theme().style_text(&self.message_body())
+            cfg.theme().style_text(&self.message_body()),
+            if cfg.bell() {
+                BEL /* emit bell sound in recipient's terminal */
+            } else {
+                NULL
+            }
         )
     }
 }

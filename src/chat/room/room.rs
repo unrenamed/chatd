@@ -11,8 +11,7 @@ use super::member::RoomMember;
 
 use crate::chat::message::{self, Message, MessageHistory};
 use crate::chat::ratelimit::RateLimit;
-use crate::chat::user::User;
-use crate::chat::user::UserName;
+use crate::chat::user::{User, UserName};
 use crate::pubkey::PubKey;
 use crate::utils::{self, sanitize};
 
@@ -243,8 +242,6 @@ impl ChatRoom {
                     from.send_user_is_muted_message().await?;
                     return Ok(());
                 }
-
-                from.send_message(msg.clone()).await?;
 
                 let to = self.find_member(&m.to().username());
                 if !to.user.ignored.contains(&m.from().id()) {
