@@ -27,10 +27,8 @@ impl MessageHistory {
 
 #[cfg(test)]
 mod tests {
-    use crate::chat::{
-        message::{self, MessageBaseOps},
-        User,
-    };
+    use crate::chat::message::{self, MessageBaseOps};
+    use crate::chat::User;
 
     use super::*;
 
