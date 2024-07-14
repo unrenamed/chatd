@@ -1,8 +1,8 @@
-use russh_keys::key::PublicKey;
 use std::collections::HashSet;
 use std::time::Duration;
 
-use super::pubkey::PubKey;
+use crate::pubkey::PubKey;
+
 use super::set::TimedHashSet;
 use super::{pubkey_file_manager, PubKeyFileManager};
 
@@ -67,11 +67,11 @@ impl Auth {
         self.trusted_keys.clear();
     }
 
-    pub fn add_trusted_key(&mut self, key: PublicKey) {
+    pub fn add_trusted_key(&mut self, key: PubKey) {
         self.trusted_keys.insert(key.into());
     }
 
-    pub fn remove_trusted_key(&mut self, key: PublicKey) {
+    pub fn remove_trusted_key(&mut self, key: PubKey) {
         self.trusted_keys.remove(&key.into());
     }
 
@@ -83,11 +83,11 @@ impl Auth {
         self.operators.clear();
     }
 
-    pub fn add_operator(&mut self, key: PublicKey) {
+    pub fn add_operator(&mut self, key: PubKey) {
         self.operators.insert(key.into());
     }
 
-    pub fn remove_operator(&mut self, key: PublicKey) {
+    pub fn remove_operator(&mut self, key: PubKey) {
         self.operators.remove(&key.into());
     }
 
@@ -133,15 +133,15 @@ impl Auth {
         Err(AuthError::NoOplist)
     }
 
-    pub fn is_op(&self, key: &PublicKey) -> bool {
+    pub fn is_op(&self, key: &PubKey) -> bool {
         matches!(&self.operators, list if list.iter().find(|k| *k == key).is_some())
     }
 
-    pub fn is_trusted(&self, key: &PublicKey) -> bool {
+    pub fn is_trusted(&self, key: &PubKey) -> bool {
         matches!(&self.trusted_keys, list if list.iter().find(|k| *k == key).is_some())
     }
 
-    pub fn check_bans(&mut self, user: &str, key: &PublicKey) -> bool {
+    pub fn check_bans(&mut self, user: &str, key: &PubKey) -> bool {
         let mut is_banned = false;
 
         if !is_banned {

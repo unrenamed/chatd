@@ -281,7 +281,7 @@ impl WorkflowHandler for CommandExecutor {
                     .collect();
                 help.push_str(&format_commands(noop_commands));
 
-                if user.is_op {
+                if auth.is_op(&user.public_key.clone().into()) {
                     let op_commands: Vec<&Command> = to_display
                         .iter()
                         .filter(|c| c.is_op())
@@ -530,7 +530,7 @@ impl WorkflowHandler for CommandExecutor {
                 room.send_message(message.into()).await?;
             }
             Command::Mute(target_username) => 'label: {
-                if !user.is_op {
+                if !auth.is_op(&user.public_key.clone().into()) {
                     let message =
                         message::Error::new(user.into(), "must be an operator".to_string());
                     room.send_message(message.into()).await?;
@@ -580,7 +580,7 @@ impl WorkflowHandler for CommandExecutor {
                     break 'label;
                 }
 
-                if !user.is_op {
+                if !auth.is_op(&user.public_key.clone().into()) {
                     let message = message::Error::new(
                         user.into(),
                         "must be an operator to modify the MOTD".to_string(),
@@ -602,7 +602,7 @@ impl WorkflowHandler for CommandExecutor {
                 room.send_message(message.into()).await?;
             }
             Command::Kick(target_username) => 'label: {
-                if !user.is_op {
+                if !auth.is_op(&user.public_key.clone().into()) {
                     let message =
                         message::Error::new(user.into(), "must be an operator".to_string());
                     room.send_message(message.into()).await?;
@@ -628,7 +628,7 @@ impl WorkflowHandler for CommandExecutor {
                 }
             }
             Command::Ban(query) => 'label: {
-                if !user.is_op {
+                if !auth.is_op(&user.public_key.clone().into()) {
                     let message =
                         message::Error::new(user.into(), "must be an operator".to_string());
                     room.send_message(message.into()).await?;
@@ -647,13 +647,10 @@ impl WorkflowHandler for CommandExecutor {
                 match query.unwrap() {
                     BanQuery::Single { name, duration } => {
                         let target_username = UserName::from(&name);
-                        match room
-                            .try_find_member(&target_username)
-                            .filter(|member| member.user.public_key.is_some())
-                        {
+                        match room.try_find_member(&target_username) {
                             Some(member) => {
                                 auth.ban_fingerprint(
-                                    &member.user.public_key.as_ref().unwrap().fingerprint(),
+                                    &member.user.public_key.fingerprint(),
                                     duration,
                                 );
                                 let message = message::Announce::new(
@@ -693,18 +690,16 @@ impl WorkflowHandler for CommandExecutor {
                                     auth.ban_fingerprint(&fingerprint, item.duration);
 
                                     for (_, member) in room.members_iter_mut() {
-                                        if let Some(key) = &member.user.public_key {
-                                            if key.fingerprint().eq(&fingerprint) {
-                                                let message = message::Announce::new(
-                                                    user.clone().into(),
-                                                    format!(
-                                                        "banned {} from the server",
-                                                        member.user.username
-                                                    ),
-                                                );
-                                                messages.push(message.into());
-                                                member.exit()?;
-                                            }
+                                        if member.user.public_key.fingerprint().eq(&fingerprint) {
+                                            let message = message::Announce::new(
+                                                user.clone().into(),
+                                                format!(
+                                                    "banned {} from the server",
+                                                    member.user.username
+                                                ),
+                                            );
+                                            messages.push(message.into());
+                                            member.exit()?;
                                         }
                                     }
                                 }
@@ -725,7 +720,7 @@ impl WorkflowHandler for CommandExecutor {
                 }
             }
             Command::Banned => 'label: {
-                if !user.is_op {
+                if !auth.is_op(&user.public_key.clone().into()) {
                     let message =
                         message::Error::new(user.into(), "must be an operator".to_string());
                     room.send_message(message.into()).await?;
@@ -750,7 +745,7 @@ impl WorkflowHandler for CommandExecutor {
                 room.send_message(message.into()).await?;
             }
             Command::Whitelist(command) => 'label: {
-                if !user.is_op {
+                if !auth.is_op(&user.public_key.clone().into()) {
                     let message =
                         message::Error::new(user.into(), "must be an operator".to_string());
                     room.send_message(message.into()).await?;
@@ -760,7 +755,7 @@ impl WorkflowHandler for CommandExecutor {
                 exec_whitelist_command(command, &user, room, auth).await?;
             }
             Command::Oplist(command) => 'label: {
-                if !user.is_op {
+                if !auth.is_op(&user.public_key.clone().into()) {
                     let message =
                         message::Error::new(user.into(), "must be an operator".to_string());
                     room.send_message(message.into()).await?;
@@ -805,7 +800,6 @@ async fn exec_whitelist_command(
         WhitelistCommand::Add(users_or_keys) => {
             let mut invalid_keys = vec![];
             let mut invalid_users = vec![];
-            let mut no_key_users = vec![];
 
             let mut is_key = false;
             for user_or_key in users_or_keys.split_whitespace() {
@@ -817,7 +811,7 @@ async fn exec_whitelist_command(
                 if is_key {
                     let key = user_or_key;
                     match russh_keys::parse_public_key_base64(&key) {
-                        Ok(pk) => auth.add_trusted_key(pk),
+                        Ok(pk) => auth.add_trusted_key(pk.into()),
                         Err(_) => invalid_keys.push(key.to_string()),
                     }
                     is_key = false;
@@ -825,10 +819,7 @@ async fn exec_whitelist_command(
                     let user = user_or_key;
                     let username = UserName::from(user);
                     match room.try_find_member(&username).map(|m| &m.user) {
-                        Some(user) => match &user.public_key {
-                            Some(pk) => auth.add_trusted_key(pk.clone()),
-                            None => no_key_users.push(user.to_string()),
-                        },
+                        Some(user) => auth.add_trusted_key(user.public_key.clone().into()),
                         None => invalid_users.push(user.to_string()),
                     }
                 }
@@ -841,13 +832,6 @@ async fn exec_whitelist_command(
             if !invalid_users.is_empty() {
                 messages.push(format!("Invalid users: {}", invalid_users.join(", ")));
             }
-            if !no_key_users.is_empty() {
-                messages.push(format!(
-                    "Users w/o public keys: {}",
-                    no_key_users.join(", ")
-                ));
-            }
-
             if messages.is_empty() {
                 messages.push(format!("Server whitelist is updated!"));
             }
@@ -858,7 +842,6 @@ async fn exec_whitelist_command(
         WhitelistCommand::Remove(users_or_keys) => {
             let mut invalid_keys = vec![];
             let mut invalid_users = vec![];
-            let mut no_key_users = vec![];
 
             let mut is_key = false;
             for user_or_key in users_or_keys.split_whitespace() {
@@ -870,7 +853,7 @@ async fn exec_whitelist_command(
                 if is_key {
                     let key = user_or_key;
                     match russh_keys::parse_public_key_base64(&key) {
-                        Ok(pk) => auth.remove_trusted_key(pk),
+                        Ok(pk) => auth.remove_trusted_key(pk.into()),
                         Err(_) => invalid_keys.push(key.to_string()),
                     }
                     is_key = false;
@@ -878,10 +861,7 @@ async fn exec_whitelist_command(
                     let user = user_or_key;
                     let username = UserName::from(user);
                     match room.try_find_member(&username).map(|m| &m.user) {
-                        Some(user) => match &user.public_key {
-                            Some(pk) => auth.remove_trusted_key(pk.clone()),
-                            None => no_key_users.push(user.to_string()),
-                        },
+                        Some(user) => auth.remove_trusted_key(user.public_key.clone()),
                         None => invalid_users.push(user.to_string()),
                     }
                 }
@@ -894,13 +874,6 @@ async fn exec_whitelist_command(
             if !invalid_users.is_empty() {
                 messages.push(format!("Invalid users: {}", invalid_users.join(", ")));
             }
-            if !no_key_users.is_empty() {
-                messages.push(format!(
-                    "Users w/o public keys: {}",
-                    no_key_users.join(", ")
-                ));
-            }
-
             if messages.is_empty() {
                 messages.push(format!("Server whitelist is updated!"));
             }
@@ -950,13 +923,7 @@ async fn exec_whitelist_command(
             let auth = auth;
             let mut kicked = vec![];
             for (_, member) in room.members_iter() {
-                if member.user.public_key.is_none()
-                    || member
-                        .user
-                        .public_key
-                        .as_ref()
-                        .is_some_and(|key| !auth.is_trusted(&key))
-                {
+                if !auth.is_trusted(&member.user.public_key) {
                     kicked.push(member.user.clone());
                     member.exit()?;
                 }
@@ -989,7 +956,7 @@ async fn exec_whitelist_command(
                 if let Some(user) = room
                     .members_iter()
                     .map(|(_, m)| &m.user)
-                    .find(|u| u.public_key.as_ref().is_some_and(|k| *key == *k))
+                    .find(|u| u.public_key == *key)
                 {
                     trusted_online_users.push(user.username.clone().into());
                 } else {
@@ -1040,7 +1007,6 @@ async fn exec_oplist_command(
         OplistCommand::Add(users_or_keys) => {
             let mut invalid_keys = vec![];
             let mut invalid_users = vec![];
-            let mut no_key_users = vec![];
 
             let mut is_key = false;
             for user_or_key in users_or_keys.split_whitespace() {
@@ -1052,7 +1018,7 @@ async fn exec_oplist_command(
                 if is_key {
                     let key = user_or_key;
                     match russh_keys::parse_public_key_base64(&key) {
-                        Ok(pk) => auth.add_operator(pk),
+                        Ok(pk) => auth.add_operator(pk.into()),
                         Err(_) => invalid_keys.push(key.to_string()),
                     }
                     is_key = false;
@@ -1060,18 +1026,8 @@ async fn exec_oplist_command(
                     let user = user_or_key;
                     let username = UserName::from(user);
                     match room.try_find_member(&username).map(|m| &m.user) {
-                        Some(user) => match &user.public_key {
-                            Some(pk) => auth.add_operator(pk.clone()),
-                            None => no_key_users.push(user.to_string()),
-                        },
+                        Some(user) => auth.add_operator(user.public_key.clone()),
                         None => invalid_users.push(user.to_string()),
-                    }
-                    match room.try_find_member_mut(&username).map(|m| &mut m.user) {
-                        Some(user) => match &user.public_key {
-                            Some(_) => user.is_op = true,
-                            None => {}
-                        },
-                        None => {}
                     }
                 }
             }
@@ -1082,12 +1038,6 @@ async fn exec_oplist_command(
             }
             if !invalid_users.is_empty() {
                 messages.push(format!("Invalid users: {}", invalid_users.join(", ")));
-            }
-            if !no_key_users.is_empty() {
-                messages.push(format!(
-                    "Users w/o public keys: {}",
-                    no_key_users.join(", ")
-                ));
             }
 
             if messages.is_empty() {
@@ -1100,7 +1050,6 @@ async fn exec_oplist_command(
         OplistCommand::Remove(users_or_keys) => {
             let mut invalid_keys = vec![];
             let mut invalid_users = vec![];
-            let mut no_key_users = vec![];
 
             let mut is_key = false;
             for user_or_key in users_or_keys.split_whitespace() {
@@ -1112,7 +1061,7 @@ async fn exec_oplist_command(
                 if is_key {
                     let key = user_or_key;
                     match russh_keys::parse_public_key_base64(&key) {
-                        Ok(pk) => auth.remove_operator(pk),
+                        Ok(pk) => auth.remove_operator(pk.into()),
                         Err(_) => invalid_keys.push(key.to_string()),
                     }
                     is_key = false;
@@ -1120,18 +1069,8 @@ async fn exec_oplist_command(
                     let user = user_or_key;
                     let username = UserName::from(user);
                     match room.try_find_member(&username).map(|m| &m.user) {
-                        Some(user) => match &user.public_key {
-                            Some(pk) => auth.remove_operator(pk.clone()),
-                            None => no_key_users.push(user.to_string()),
-                        },
+                        Some(user) => auth.remove_operator(user.public_key.clone()),
                         None => invalid_users.push(user.to_string()),
-                    }
-                    match room.try_find_member_mut(&username).map(|m| &mut m.user) {
-                        Some(user) => match &user.public_key {
-                            Some(_) => user.is_op = false,
-                            None => {}
-                        },
-                        None => {}
                     }
                 }
             }
@@ -1143,13 +1082,6 @@ async fn exec_oplist_command(
             if !invalid_users.is_empty() {
                 messages.push(format!("Invalid users: {}", invalid_users.join(", ")));
             }
-            if !no_key_users.is_empty() {
-                messages.push(format!(
-                    "Users w/o public keys: {}",
-                    no_key_users.join(", ")
-                ));
-            }
-
             if messages.is_empty() {
                 messages.push(format!("Server operators list is updated!"));
             }
@@ -1196,7 +1128,7 @@ async fn exec_oplist_command(
                 if let Some(user) = room
                     .members_iter()
                     .map(|(_, m)| &m.user)
-                    .find(|u| u.public_key.as_ref().is_some_and(|k| *key == *k))
+                    .find(|u| u.public_key == *key)
                 {
                     online_operators.push(user.username.clone().into());
                 } else {

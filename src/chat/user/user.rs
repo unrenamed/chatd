@@ -1,9 +1,9 @@
 use chrono::{DateTime, Utc};
-use russh_keys::key::PublicKey;
 use std::collections::BTreeSet;
 use std::fmt::Display;
 use std::time::Duration;
 
+use crate::pubkey::PubKey;
 use crate::utils;
 
 use super::config::UserConfig;
@@ -14,30 +14,26 @@ use super::{UserName, UserTheme};
 pub struct User {
     pub id: usize,
     pub username: UserName,
-    pub status: UserStatus,
-    pub joined_at: DateTime<Utc>,
-    pub ssh_client: String,
-    pub public_key: Option<PublicKey>,
-    pub reply_to: Option<usize>,
     pub config: UserConfig,
-    pub is_op: bool,
+    pub status: UserStatus,
+
+    pub public_key: PubKey,
+
+    pub reply_to: Option<usize>,
     pub is_muted: bool,
+
     pub ignored: BTreeSet<usize>,
     pub focused: BTreeSet<usize>,
+
+    pub joined_at: DateTime<Utc>,
+    pub ssh_client: String,
 }
 
 impl User {
-    pub fn new(
-        id: usize,
-        username: UserName,
-        ssh_client: String,
-        public_key: Option<PublicKey>,
-        is_op: bool,
-    ) -> Self {
+    pub fn new(id: usize, username: UserName, ssh_client: String, public_key: PubKey) -> Self {
         let mut user = Self {
             id,
             ssh_client,
-            is_op,
             public_key,
             joined_at: Utc::now(),
             ..Default::default()
@@ -94,17 +90,12 @@ impl User {
 
 impl Display for User {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let fingerprint = match &self.public_key {
-            Some(key) => format!("SHA256: {}", key.fingerprint()),
-            None => "(no public key)".to_string(),
-        };
-
         write!(
             f,
             "name: {}{} > fingerprint: {}{} > client: {}{} > joined: {} ago",
             self.username,
             utils::NEWLINE,
-            fingerprint,
+            format!("SHA256: {}", self.public_key.fingerprint()),
             utils::NEWLINE,
             self.ssh_client,
             utils::NEWLINE,

@@ -5,7 +5,6 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use governor::Quota;
 use nonzero_ext::nonzero;
-use russh_keys::key::PublicKey;
 use tokio::sync::{mpsc, watch};
 
 use super::member::RoomMember;
@@ -14,6 +13,7 @@ use crate::chat::message::{self, Message, MessageHistory};
 use crate::chat::ratelimit::RateLimit;
 use crate::chat::user::User;
 use crate::chat::user::UserName;
+use crate::pubkey::PubKey;
 use crate::utils::{self, sanitize};
 
 type UserId = usize;
@@ -88,8 +88,7 @@ impl ChatRoom {
         &mut self,
         user_id: UserId,
         username: String,
-        is_op: bool,
-        key: Option<PublicKey>,
+        key: PubKey,
         ssh_id: String,
         message_tx: mpsc::Sender<String>,
         exit_tx: watch::Sender<()>,
@@ -100,7 +99,7 @@ impl ChatRoom {
             false => sanitize::name(&username).into(),
         };
 
-        let user = User::new(user_id, username.clone(), ssh_id, key, is_op);
+        let user = User::new(user_id, username.clone(), ssh_id, key);
         let member = RoomMember::new(user.clone(), message_tx, exit_tx);
 
         self.members.insert(username.clone(), member);

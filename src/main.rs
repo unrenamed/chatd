@@ -10,6 +10,7 @@ mod auth;
 mod chat;
 mod cli;
 mod logger;
+mod pubkey;
 mod server;
 mod terminal;
 mod utils;

@@ -8,6 +8,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::Mutex;
 
 use crate::auth;
+use crate::pubkey::PubKey;
 use crate::terminal::TerminalHandle;
 
 use super::{SessionEvent, SessionRepositoryEvent};
@@ -63,26 +64,23 @@ impl Handler for ThinHandler {
         let id = self.id;
         let connect_username = self.connect_username.clone();
         let ssh_id = String::from_utf8_lossy(session.remote_sshid()).to_string();
-        let key = self.public_key.clone();
+        let key = self
+            .public_key
+            .clone()
+            .expect("Public key to exist on session open");
+
         let terminal_handle = TerminalHandle::new(channel.id(), session.handle());
 
         let sender = self.repo_event_sender.clone();
         let (session_event_tx, session_event_rx) = tokio::sync::mpsc::channel(100);
         self.session_event_sender = Some(session_event_tx);
 
-        let auth = self.auth.lock().await;
-        let is_op = match &self.public_key {
-            Some(key) => auth.is_op(key),
-            None => false,
-        };
-
         tokio::spawn(async move {
             let event = SessionRepositoryEvent::NewSession(
                 id,
                 ssh_id,
                 connect_username,
-                is_op,
-                key,
+                key.into(),
                 terminal_handle,
                 session_event_rx,
             );
@@ -107,7 +105,8 @@ impl Handler for ThinHandler {
             return Ok(Auth::Accept);
         }
 
-        if auth.is_trusted(pk) && !auth.check_bans(&user, &pk) {
+        let pub_key: PubKey = pk.into();
+        if auth.is_trusted(&pub_key) && !auth.check_bans(&user, &pub_key) {
             return Ok(Auth::Accept);
         }
 
@@ -386,8 +385,8 @@ mod tests {
                 Ok(event) => assert!(matches!(
                     event,
                     SessionRepositoryEvent::NewSession(
-                        id, _, username, is_op, _, _, _
-                    ) if id == 1 && username == "user".to_string() && !is_op
+                        id, _, username, _, _, _
+                    ) if id == 1 && username == "user".to_string()
                 )),
                 Err(err) => panic!("{}", err),
             }
@@ -433,7 +432,7 @@ mod tests {
                 let timeout_duration = Duration::from_secs(1);
                 match receive_event(&mut rx, timeout_duration).await {
                     Ok(event) => match event {
-                        SessionRepositoryEvent::NewSession(_, _, _, _, _, _, mut event_rx) => {
+                        SessionRepositoryEvent::NewSession(_, _, _, _, _, mut event_rx) => {
                             match receive_event(&mut event_rx, timeout_duration).await {
                                 Ok(event) => assert!(matches!(event, SessionEvent::Env(name, value) if name == "THEME" && value == "mono")),
                                 Err(err) => panic!("{}", err),
@@ -484,7 +483,7 @@ mod tests {
                 let timeout_duration = Duration::from_secs(1);
                 match receive_event(&mut rx, timeout_duration).await {
                     Ok(event) => match event {
-                        SessionRepositoryEvent::NewSession(_, _, _, _, _, _, mut event_rx) => {
+                        SessionRepositoryEvent::NewSession(_, _, _, _, _, mut event_rx) => {
                             match receive_event(&mut event_rx, timeout_duration).await {
                                 Ok(event) => assert!(matches!(event, SessionEvent::WindowResize(cw, rh) if cw == 100 && rh == 50)),
                                 Err(err) => panic!("{}", err),
@@ -530,7 +529,7 @@ mod tests {
                 let timeout_duration = Duration::from_secs(1);
                 match receive_event(&mut rx, timeout_duration).await {
                     Ok(event) => match event {
-                        SessionRepositoryEvent::NewSession(_, _, _, _, _, _, mut event_rx) => {
+                        SessionRepositoryEvent::NewSession(_, _, _, _, _, mut event_rx) => {
                             match receive_event(&mut event_rx, timeout_duration).await {
                                 Ok(event) => assert!(matches!(event, SessionEvent::WindowResize(cw, rh) if cw == 100 && rh == 50)),
                                 Err(err) => panic!("{}", err),
@@ -574,7 +573,7 @@ mod tests {
             let timeout_duration = Duration::from_secs(1);
             match receive_event(&mut rx, timeout_duration).await {
                 Ok(event) => match event {
-                    SessionRepositoryEvent::NewSession(_, _, _, _, _, _, mut event_rx) => {
+                    SessionRepositoryEvent::NewSession(_, _, _, _, _, mut event_rx) => {
                         match receive_event(&mut event_rx, timeout_duration).await {
                             Ok(event) => {
                                 assert!(matches!(event, SessionEvent::Data(bytes) if bytes == data))
@@ -649,8 +648,8 @@ mod tests {
 
         let mut auth = auth::Auth::default();
         auth.enable_whitelist_mode();
-        auth.add_trusted_key(user_pk.clone());
-        auth.add_trusted_key(banned_user_pk.clone());
+        auth.add_trusted_key(user_pk.clone().into());
+        auth.add_trusted_key(banned_user_pk.clone().into());
         auth.ban_fingerprint(&banned_user_pk.fingerprint(), Duration::from_secs(60));
 
         let (tx, _) = tokio::sync::mpsc::channel(1);

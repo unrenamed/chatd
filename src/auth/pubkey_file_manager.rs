@@ -2,9 +2,8 @@ use std::collections::HashSet;
 use std::fs::OpenOptions;
 use std::io;
 
+use crate::pubkey::PubKey;
 use crate::utils;
-
-use super::PubKey;
 
 #[derive(Debug)]
 pub enum LoadError {

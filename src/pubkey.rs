@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
-use russh_keys::key::PublicKey;
+use russh_keys::key::{KeyPair, PublicKey};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PubKey(PublicKey);
@@ -31,6 +31,12 @@ impl From<PublicKey> for PubKey {
     }
 }
 
+impl From<&PublicKey> for PubKey {
+    fn from(value: &PublicKey) -> Self {
+        Self(value.clone())
+    }
+}
+
 impl Display for PubKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
@@ -46,6 +52,16 @@ impl Hash for PubKey {
 impl PartialEq<PublicKey> for PubKey {
     fn eq(&self, other: &PublicKey) -> bool {
         self.0.eq(other)
+    }
+}
+
+impl Default for PubKey {
+    fn default() -> Self {
+        let key_pair = KeyPair::generate_ed25519().unwrap();
+        let key = key_pair
+            .clone_public_key()
+            .expect("Public key of ed25519 algorithm");
+        Self(key.into())
     }
 }
 

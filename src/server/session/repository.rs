@@ -2,7 +2,6 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use log::{error, info, trace, warn};
-use russh_keys::key::PublicKey;
 use terminal_keycode::KeyCode;
 use tokio::spawn;
 use tokio::sync::mpsc::{self, Receiver};
@@ -10,13 +9,13 @@ use tokio::sync::{watch, Mutex};
 
 use crate::auth::Auth;
 use crate::chat::ChatRoom;
+use crate::pubkey::PubKey;
 use crate::server::session_workflow::*;
 use crate::terminal::{keyboard_decoder, Terminal, TerminalHandle};
 
 type SessionId = usize;
 type SessionSshId = String;
 type SessionConnectUsername = String;
-type SessionIsOp = bool;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SessionEvent {
@@ -31,8 +30,7 @@ pub enum SessionRepositoryEvent {
         SessionId,
         SessionSshId,
         SessionConnectUsername,
-        SessionIsOp,
-        Option<PublicKey>,
+        PubKey,
         TerminalHandle,
         Receiver<SessionEvent>,
     ),
@@ -41,13 +39,12 @@ pub enum SessionRepositoryEvent {
 impl Debug for SessionRepositoryEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NewSession(arg0, arg1, arg2, arg3, arg4, _arg5, _arg6) => f
+            Self::NewSession(arg0, arg1, arg2, arg3, _arg4, _arg5) => f
                 .debug_tuple("NewSession")
                 .field(arg0)
                 .field(arg1)
                 .field(arg2)
                 .field(arg3)
-                .field(arg4)
                 .finish(),
         }
     }
@@ -67,15 +64,7 @@ impl SessionRepository {
     pub async fn wait_for_sessions(&mut self, room: Arc<Mutex<ChatRoom>>, auth: Arc<Mutex<Auth>>) {
         while let Some(event) = self.repo_event_receiver.recv().await {
             match event {
-                SessionRepositoryEvent::NewSession(
-                    id,
-                    ssh_id,
-                    username,
-                    is_op,
-                    pk,
-                    handle,
-                    event_rx,
-                ) => {
+                SessionRepositoryEvent::NewSession(id, ssh_id, username, pk, handle, event_rx) => {
                     let room = room.clone();
                     let auth = auth.clone();
                     let mut terminal = Terminal::new(handle);
@@ -86,7 +75,7 @@ impl SessionRepository {
                         {
                             let mut room = room.lock().await;
                             let join_result = room
-                                .join(id, username, is_op, pk, ssh_id, message_tx, exit_tx)
+                                .join(id, username, pk, ssh_id, message_tx, exit_tx)
                                 .await;
                             if let Ok(user) = join_result {
                                 terminal.set_prompt(&user.config.display_name());
