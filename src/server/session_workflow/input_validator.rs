@@ -40,7 +40,7 @@ impl WorkflowHandler for InputValidator {
 
         if input_str.len() > INPUT_MAX_LEN {
             let message = message::Error::new(
-                context.user.clone(),
+                context.user.clone().into(),
                 "message dropped. Input is too long".to_string(),
             );
             room.send_message(message.into()).await?;

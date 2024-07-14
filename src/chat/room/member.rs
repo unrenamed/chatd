@@ -35,16 +35,16 @@ impl RoomMember {
     }
 
     pub async fn send_message(&self, msg: Message) -> Result<(), mpsc::error::SendError<String>> {
-        let message = match self.user.timestamp_mode.format() {
-            Some(fmt) => msg.format_with_timestamp(&self.user, fmt),
-            None => msg.format(&self.user),
+        let message = match self.user.config.timestamp_mode().format() {
+            Some(fmt) => msg.format_with_timestamp(&self.user.config, fmt),
+            None => msg.format(&self.user.config),
         };
         self.message_tx.send(message).await
     }
 
     pub async fn send_user_is_muted_message(&self) -> Result<(), mpsc::error::SendError<String>> {
         let msg = message::Error::new(
-            self.user.clone(),
+            self.user.clone().into(),
             "You are muted and cannot send messages.".to_string(),
         );
         self.send_message(msg.into()).await

@@ -112,7 +112,7 @@ impl ChatRoom {
         self.feed_history(&username).await;
 
         let message = message::Announce::new(
-            user.clone(),
+            user.clone().into(),
             format!("joined. (Connected: {})", self.members.len()),
         );
         self.send_message(message.into()).await?;
@@ -123,8 +123,10 @@ impl ChatRoom {
     pub async fn send_motd(&mut self, username: &UserName) {
         let motd = self.motd.clone();
         let member = self.find_member(username);
-        let message =
-            message::System::new(member.user.clone(), format!("{}{}", motd, utils::NEWLINE));
+        let message = message::System::new(
+            member.user.clone().into(),
+            format!("{}{}", motd, utils::NEWLINE),
+        );
         let _ = member.send_message(message.into()).await;
     }
 
@@ -146,7 +148,8 @@ impl ChatRoom {
         let member = self.find_member(&username);
         let user = &member.user;
         let duration = humantime::format_duration(user.joined_duration());
-        let message = message::Announce::new(user.clone(), format!("left: (After {})", duration));
+        let message =
+            message::Announce::new(user.clone().into(), format!("left: (After {})", duration));
         self.send_message(message.into()).await?;
 
         self.members.remove(&username);
@@ -164,30 +167,31 @@ impl ChatRoom {
     pub async fn send_message(&mut self, msg: Message) -> anyhow::Result<()> {
         match msg {
             Message::System(ref m) => {
-                let member = self.find_member(&m.from.username);
+                let member = self.find_member(&m.from().username());
                 member.send_message(msg).await?;
             }
             Message::Command(ref m) => {
-                let member = self.find_member(&m.from.username);
+                let member = self.find_member(&m.from().username());
                 member.send_message(msg).await?;
             }
             Message::Error(ref m) => {
-                let member = self.find_member(&m.from.username);
+                let member = self.find_member(&m.from().username());
                 member.send_message(msg).await?;
             }
             Message::Public(ref m) => {
                 self.history.push(msg.clone());
                 for (_, member) in self.members.iter() {
-                    if m.from.is_muted && member.user.id == m.from.id {
+                    if m.from().is_muted() && member.user.id == m.from().id() {
                         member.send_user_is_muted_message().await?;
                     }
-                    if m.from.is_muted {
+                    if m.from().is_muted() {
                         continue;
                     }
-                    if member.user.ignored.contains(&m.from.id) {
+                    if member.user.ignored.contains(&m.from().id()) {
                         continue;
                     }
-                    if !member.user.focused.is_empty() && !member.user.focused.contains(&m.from.id)
+                    if !member.user.focused.is_empty()
+                        && !member.user.focused.contains(&m.from().id())
                     {
                         continue;
                     }
@@ -199,13 +203,13 @@ impl ChatRoom {
             Message::Emote(ref m) => {
                 self.history.push(msg.clone());
                 for (_, member) in self.members.iter() {
-                    if m.from.is_muted && member.user.id == m.from.id {
+                    if m.from().is_muted() && member.user.id == m.from().id() {
                         member.send_user_is_muted_message().await?;
                     }
-                    if m.from.is_muted {
+                    if m.from().is_muted() {
                         continue;
                     }
-                    if member.user.ignored.contains(&m.from.id) {
+                    if member.user.ignored.contains(&m.from().id()) {
                         continue;
                     }
                     if let Err(_) = member.send_message(msg.clone()).await {
@@ -216,16 +220,16 @@ impl ChatRoom {
             Message::Announce(ref m) => {
                 self.history.push(msg.clone());
                 for (_, member) in self.members.iter() {
-                    if m.from.is_muted && member.user.id == m.from.id {
+                    if m.from().is_muted() && member.user.id == m.from().id() {
                         member.send_user_is_muted_message().await?;
                     }
-                    if m.from.is_muted {
+                    if m.from().is_muted() {
                         continue;
                     }
-                    if member.user.quiet {
+                    if member.user.config.quiet() {
                         continue;
                     }
-                    if member.user.ignored.contains(&m.from.id) {
+                    if member.user.ignored.contains(&m.from().id()) {
                         continue;
                     }
                     if let Err(_) = member.send_message(msg.clone()).await {
@@ -234,17 +238,17 @@ impl ChatRoom {
                 }
             }
             Message::Private(ref m) => {
-                let from = self.find_member(&m.from.username);
+                let from = self.find_member(&m.from().username());
 
-                if m.from.is_muted {
+                if m.from().is_muted() {
                     from.send_user_is_muted_message().await?;
                     return Ok(());
                 }
 
                 from.send_message(msg.clone()).await?;
 
-                let to = self.find_member(&m.to.username);
-                if !to.user.ignored.contains(&m.from.id) {
+                let to = self.find_member(&m.to().username());
+                if !to.user.ignored.contains(&m.from().id()) {
                     to.send_message(msg).await?;
                 }
             }

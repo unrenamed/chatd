@@ -1,8 +1,9 @@
 use chrono::{DateTime, Utc};
 use enum_dispatch::enum_dispatch;
-use regex::{escape, Regex};
 
-use crate::chat::user::User;
+use crate::chat::UserConfig;
+
+use super::{Author, Recipient};
 
 #[enum_dispatch]
 #[derive(Debug, Clone, PartialEq)]
@@ -25,237 +26,331 @@ pub enum Message {
 
 /// Trait for formatting a message within the context of a chat user
 #[enum_dispatch(Message)]
-pub trait MessageFormatter: Clone {
-    fn format(&self, user: &User) -> String;
-    fn get_created_at(&self) -> DateTime<Utc>;
+pub trait MessageFormatter: Clone + MessageBaseOps {
+    fn format(&self, cfg: &UserConfig) -> String;
 
-    fn format_with_timestamp(&self, user: &User, format: &str) -> String {
-        let timestamp = self.get_created_at().format(format);
+    fn format_with_timestamp(&self, cfg: &UserConfig, format: &str) -> String {
+        let timestamp = self.message_created_at().format(format);
         format!(
             "{} {}",
-            user.theme.style_system_text(&timestamp.to_string()),
-            self.format(user)
+            cfg.theme().style_system_text(&timestamp.to_string()),
+            self.format(cfg)
         )
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct MessageBase {
+    body: String,
+    created_at: DateTime<Utc>,
+}
+
+#[enum_dispatch(Message)]
+pub trait MessageBaseOps {
+    fn message_body(&self) -> &String;
+    fn message_created_at(&self) -> DateTime<Utc>;
+}
+
+impl MessageBaseOps for MessageBase {
+    fn message_body(&self) -> &String {
+        &self.body
+    }
+
+    fn message_created_at(&self) -> DateTime<Utc> {
+        self.created_at
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Public {
-    pub created_at: DateTime<Utc>,
-    pub from: User,
-    pub body: String,
+    base: MessageBase,
+    from: Author,
 }
 
 impl Public {
-    pub fn new(from: User, body: String) -> Self {
+    pub fn new(from: Author, body: String) -> Self {
         Self {
             from,
-            body,
-            created_at: Utc::now(),
+            base: MessageBase {
+                body,
+                created_at: Utc::now(),
+            },
         }
+    }
+
+    pub fn from(&self) -> &Author {
+        &self.from
+    }
+}
+
+impl MessageBaseOps for Public {
+    fn message_body(&self) -> &String {
+        self.base.message_body()
+    }
+
+    fn message_created_at(&self) -> DateTime<Utc> {
+        self.base.message_created_at()
     }
 }
 
 impl MessageFormatter for Public {
-    fn format(&self, user: &User) -> String {
-        let pattern = format!("@{}", user.username);
-        let escaped_pattern = escape(&pattern);
-        let mut message = self.body.clone();
+    fn format(&self, cfg: &UserConfig) -> String {
+        let mut message = self.message_body().to_string();
 
-        if let Ok(re) = Regex::new(&escaped_pattern) {
-            let replacement = user.theme.style_tagged_username(&pattern).to_string();
-            message = re.replace_all(&self.body, replacement).to_string();
+        if let Some(re) = cfg.highlight() {
+            if let Some(matched) = re.find(&message) {
+                let replacement = cfg.theme().style_tagged_username(matched).to_string();
+                message = re.replace_all(&message, &replacement).to_string();
+            }
         }
 
-        let username = user.theme.style_username(self.from.username.as_ref());
+        let username = cfg.theme().style_username(self.from.username().as_ref());
         format!("{}: {}", username, message)
-    }
-
-    fn get_created_at(&self) -> DateTime<Utc> {
-        self.created_at
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Private {
-    pub created_at: DateTime<Utc>,
-    pub from: User,
-    pub to: User,
-    pub body: String,
+    base: MessageBase,
+    from: Author,
+    to: Recipient,
 }
 
 impl Private {
-    pub fn new(from: User, to: User, body: String) -> Self {
+    pub fn new(from: Author, to: Recipient, body: String) -> Self {
         Self {
             from,
             to,
-            body,
-            created_at: Utc::now(),
+            base: MessageBase {
+                body,
+                created_at: Utc::now(),
+            },
         }
+    }
+
+    pub fn from(&self) -> &Author {
+        &self.from
+    }
+
+    pub fn to(&self) -> &Recipient {
+        &self.to
+    }
+}
+
+impl MessageBaseOps for Private {
+    fn message_body(&self) -> &String {
+        self.base.message_body()
+    }
+
+    fn message_created_at(&self) -> DateTime<Utc> {
+        self.base.message_created_at()
     }
 }
 
 impl MessageFormatter for Private {
-    fn format(&self, user: &User) -> String {
-        if user.username.eq(&self.from.username) {
-            format!(
-                "[PM to {}] {}",
-                user.theme.style_username(self.to.username.as_ref()),
-                user.theme.style_text(&self.body)
-            )
-        } else {
-            format!(
-                "[PM from {}] {}",
-                user.theme.style_username(self.from.username.as_ref()),
-                user.theme.style_text(&self.body)
-            )
-        }
-    }
-
-    fn get_created_at(&self) -> DateTime<Utc> {
-        self.created_at
+    fn format(&self, cfg: &UserConfig) -> String {
+        format!(
+            "[PM from {}] {}",
+            cfg.theme().style_username(self.from.username().as_ref()),
+            cfg.theme().style_text(&self.message_body())
+        )
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Emote {
-    pub created_at: DateTime<Utc>,
-    pub from: User,
-    pub body: String,
+    base: MessageBase,
+    from: Author,
 }
 
 impl Emote {
-    pub fn new(from: User, body: String) -> Self {
+    pub fn new(from: Author, body: String) -> Self {
         Self {
             from,
-            body,
-            created_at: Utc::now(),
+            base: MessageBase {
+                body,
+                created_at: Utc::now(),
+            },
         }
+    }
+
+    pub fn from(&self) -> &Author {
+        &self.from
+    }
+}
+
+impl MessageBaseOps for Emote {
+    fn message_body(&self) -> &String {
+        self.base.message_body()
+    }
+
+    fn message_created_at(&self) -> DateTime<Utc> {
+        self.base.message_created_at()
     }
 }
 
 impl MessageFormatter for Emote {
-    fn format(&self, user: &User) -> String {
-        let text = format!(" ** {} {}", self.from.username, &self.body);
-        user.theme.style_text(&text).to_string()
-    }
-
-    fn get_created_at(&self) -> DateTime<Utc> {
-        self.created_at
+    fn format(&self, cfg: &UserConfig) -> String {
+        let text = format!(" ** {} {}", self.from.username(), &self.message_body());
+        cfg.theme().style_text(&text).to_string()
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Announce {
-    pub created_at: DateTime<Utc>,
-    pub from: User,
-    pub body: String,
+    base: MessageBase,
+    from: Author,
 }
 
 impl Announce {
-    pub fn new(from: User, body: String) -> Self {
+    pub fn new(from: Author, body: String) -> Self {
         Self {
             from,
-            body,
-            created_at: Utc::now(),
+            base: MessageBase {
+                body,
+                created_at: Utc::now(),
+            },
         }
+    }
+
+    pub fn from(&self) -> &Author {
+        &self.from
+    }
+}
+
+impl MessageBaseOps for Announce {
+    fn message_body(&self) -> &String {
+        self.base.message_body()
+    }
+
+    fn message_created_at(&self) -> DateTime<Utc> {
+        self.base.message_created_at()
     }
 }
 
 impl MessageFormatter for Announce {
-    fn format(&self, user: &User) -> String {
-        let text = format!(" * {} {}", self.from.username, &self.body);
-        user.theme.style_system_text(&text).to_string()
-    }
-
-    fn get_created_at(&self) -> DateTime<Utc> {
-        self.created_at
+    fn format(&self, cfg: &UserConfig) -> String {
+        let text = format!(" * {} {}", self.from.username(), &self.message_body());
+        cfg.theme().style_system_text(&text).to_string()
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct System {
-    pub created_at: DateTime<Utc>,
-    pub from: User,
-    pub body: String,
+    base: MessageBase,
+    from: Author,
 }
 
 impl System {
-    pub fn new(from: User, body: String) -> Self {
+    pub fn new(from: Author, body: String) -> Self {
         Self {
             from,
-            body,
-            created_at: Utc::now(),
+            base: MessageBase {
+                body,
+                created_at: Utc::now(),
+            },
         }
+    }
+
+    pub fn from(&self) -> &Author {
+        &self.from
+    }
+}
+
+impl MessageBaseOps for System {
+    fn message_body(&self) -> &String {
+        self.base.message_body()
+    }
+
+    fn message_created_at(&self) -> DateTime<Utc> {
+        self.base.message_created_at()
     }
 }
 
 impl MessageFormatter for System {
-    fn format(&self, user: &User) -> String {
-        let text = format!("-> {}", &self.body);
-        user.theme.style_system_text(&text).to_string()
-    }
-
-    fn get_created_at(&self) -> DateTime<Utc> {
-        self.created_at
+    fn format(&self, cfg: &UserConfig) -> String {
+        let text = format!("-> {}", &self.message_body());
+        cfg.theme().style_system_text(&text).to_string()
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Error {
-    pub created_at: DateTime<Utc>,
-    pub from: User,
-    pub body: String,
+    base: MessageBase,
+    from: Author,
 }
 
 impl Error {
-    pub fn new(from: User, body: String) -> Self {
+    pub fn new(from: Author, body: String) -> Self {
         Self {
             from,
-            body,
-            created_at: Utc::now(),
+            base: MessageBase {
+                body,
+                created_at: Utc::now(),
+            },
         }
+    }
+
+    pub fn from(&self) -> &Author {
+        &self.from
+    }
+}
+
+impl MessageBaseOps for Error {
+    fn message_body(&self) -> &String {
+        self.base.message_body()
+    }
+
+    fn message_created_at(&self) -> DateTime<Utc> {
+        self.base.message_created_at()
     }
 }
 
 impl MessageFormatter for Error {
-    fn format(&self, user: &User) -> String {
-        let text = format!("-> Error: {}", &self.body);
-        user.theme.style_system_text(&text).to_string()
-    }
-
-    fn get_created_at(&self) -> DateTime<Utc> {
-        self.created_at
+    fn format(&self, cfg: &UserConfig) -> String {
+        let text = format!("-> Error: {}", &self.message_body());
+        cfg.theme().style_system_text(&text).to_string()
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Command {
-    pub created_at: DateTime<Utc>,
-    pub from: User,
-    pub body: String,
+    base: MessageBase,
+    from: Author,
 }
 
 impl Command {
-    pub fn new(from: User, body: String) -> Self {
+    pub fn new(from: Author, body: String) -> Self {
         Self {
             from,
-            body,
-            created_at: Utc::now(),
+            base: MessageBase {
+                body,
+                created_at: Utc::now(),
+            },
         }
+    }
+
+    pub fn from(&self) -> &Author {
+        &self.from
+    }
+}
+
+impl MessageBaseOps for Command {
+    fn message_body(&self) -> &String {
+        self.base.message_body()
+    }
+
+    fn message_created_at(&self) -> DateTime<Utc> {
+        self.base.message_created_at()
     }
 }
 
 impl MessageFormatter for Command {
-    fn format(&self, user: &User) -> String {
+    fn format(&self, cfg: &UserConfig) -> String {
         format!(
             "[{}] {}",
-            user.theme.style_username(self.from.username.as_ref()),
-            user.theme.style_text(&self.body),
+            cfg.theme().style_username(self.from.username().as_ref()),
+            cfg.theme().style_text(&self.message_body()),
         )
-    }
-
-    fn get_created_at(&self) -> DateTime<Utc> {
-        self.created_at
     }
 }

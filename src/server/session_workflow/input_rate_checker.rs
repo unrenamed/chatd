@@ -44,7 +44,7 @@ impl WorkflowHandler for InputRateChecker {
                 "rate limit exceeded. Message dropped. Next allowed in {}",
                 humantime::format_duration(remaining)
             );
-            let message = message::Error::new(context.user.clone(), body);
+            let message = message::Error::new(context.user.clone().into(), body);
             room.send_message(message.into()).await?;
             self.next = None;
         }

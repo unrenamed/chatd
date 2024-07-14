@@ -27,13 +27,16 @@ impl MessageHistory {
 
 #[cfg(test)]
 mod tests {
-    use crate::chat::{message, User};
+    use crate::chat::{
+        message::{self, MessageBaseOps},
+        User,
+    };
 
     use super::*;
 
     fn get_test_system_message(text: &str) -> message::System {
         let user = User::default();
-        message::System::new(user, text.to_string())
+        message::System::new(user.into(), text.to_string())
     }
 
     #[test]
@@ -82,7 +85,7 @@ mod tests {
 
         let first_message = history.buf.get(0).unwrap();
         match first_message {
-            Message::System(msg) if msg.body == "Message 1" => (),
+            Message::System(msg) if msg.message_body() == "Message 1" => (),
             _ => panic!("First message should be the second inserted message after overflow"),
         }
     }

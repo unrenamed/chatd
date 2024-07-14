@@ -46,21 +46,21 @@ impl WorkflowHandler for CommandParser {
                 terminal.clear_input()?;
                 room.find_member_mut(&user.username)
                     .update_last_sent_time(Utc::now());
-                let message = message::Public::new(user, input_str);
+                let message = message::Public::new(user.clone().into(), input_str);
                 room.send_message(message.into()).await?;
             }
             Err(err) => {
                 terminal.input.push_to_history();
                 terminal.clear_input()?;
-                let message = message::Command::new(user.clone(), input_str);
+                let message = message::Command::new(user.clone().into(), input_str);
                 room.send_message(message.into()).await?;
-                let message = message::Error::new(user, format!("{}", err));
+                let message = message::Error::new(user.clone().into(), format!("{}", err));
                 room.send_message(message.into()).await?;
             }
             Ok(command) => {
                 terminal.input.push_to_history();
                 terminal.clear_input()?;
-                let message = message::Command::new(user.clone(), input_str);
+                let message = message::Command::new(user.clone().into(), input_str);
                 room.send_message(message.into()).await?;
                 context.command = Some(command);
             }
