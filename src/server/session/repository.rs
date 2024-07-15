@@ -10,7 +10,7 @@ use tokio::sync::{watch, Mutex};
 use crate::auth::Auth;
 use crate::chat::ChatRoom;
 use crate::pubkey::PubKey;
-use crate::server::session_workflow::*;
+use crate::server::session_workflow::{self, WorkflowContext, WorkflowHandler};
 use crate::terminal::{keyboard_decoder, Terminal, TerminalHandle};
 
 type SessionId = usize;
@@ -67,6 +67,7 @@ impl SessionRepository {
                 SessionRepositoryEvent::NewSession(id, ssh_id, username, pk, handle, event_rx) => {
                     let room = room.clone();
                     let auth = auth.clone();
+
                     let mut terminal = Terminal::new(handle);
                     let (message_tx, message_rx) = mpsc::channel(100);
                     let (exit_tx, exit_rx) = watch::channel(());
@@ -147,48 +148,38 @@ impl SessionRepository {
                     let user = room.find_member_by_id(id).user.clone();
                     let mut ctx = WorkflowContext::new(user);
 
+                    let mut text_bytes = vec![];
                     let codes = keyboard_decoder::decode_bytes_to_codes(&data);
                     for code in codes {
-                        match code {
+                        if let Err(err) = match code {
+                            KeyCode::Char(_) | KeyCode::Space => {
+                                text_bytes = [text_bytes, code.bytes()].concat();
+                                Ok(())
+                            }
                             KeyCode::Tab => {
-                                let mut autocomplete = Autocomplete::default();
-                                if let Err(err) = autocomplete
+                                session_workflow::autocomplete()
                                     .execute(&mut ctx, &mut term, &mut room, &mut auth)
                                     .await
-                                {
-                                    error!(
-                                        "Failed to execute autocomplete workflow for user {}: {}",
-                                        id, err
-                                    );
-                                }
                             }
                             KeyCode::Enter => {
-                                let command_executor = CommandExecutor::default();
-                                let command_parser = CommandParser::new(command_executor);
-                                let input_validator = InputValidator::new(command_parser);
-                                let mut rate_checker = InputRateChecker::new(input_validator);
-                                if let Err(err) = rate_checker
+                                session_workflow::input_submit()
                                     .execute(&mut ctx, &mut term, &mut room, &mut auth)
                                     .await
-                                {
-                                    error!(
-                                        "Failed to execute command workflow for user {}: {}",
-                                        id, err
-                                    );
-                                }
                             }
                             _ => {
-                                let mut key_mapper = TerminalKeyMapper::new(code);
-                                if let Err(err) = key_mapper
+                                session_workflow::emacs_key(code)
                                     .execute(&mut ctx, &mut term, &mut room, &mut auth)
                                     .await
-                                {
-                                    error!(
-                                        "Failed to execute terminal workflow for user {}: {}",
-                                        id, err
-                                    );
-                                }
                             }
+                        } {
+                            error!("Failed to execute workflow for user {}: {}", id, err);
+                        }
+                    }
+
+                    if !text_bytes.is_empty() {
+                        term.input.insert_before_cursor(&text_bytes);
+                        if let Err(err) = term.print_input_line() {
+                            error!("Failed to execute workflow for user {}: {}", id, err);
                         }
                     }
                 }
@@ -200,10 +191,7 @@ impl SessionRepository {
                     let user = room.find_member_by_id(id).user.clone();
                     let mut ctx = WorkflowContext::new(user);
 
-                    let command_executor = CommandExecutor::default();
-                    let command_parser = CommandParser::new(command_executor);
-                    let mut env_parser = EnvParser::new(name, value, command_parser);
-                    if let Err(err) = env_parser
+                    if let Err(err) = session_workflow::env(name, value)
                         .execute(&mut ctx, &mut term, &mut room, &mut auth)
                         .await
                     {

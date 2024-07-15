@@ -8,19 +8,19 @@ use crate::terminal::Terminal;
 use super::handler::WorkflowHandler;
 use super::WorkflowContext;
 
-pub struct TerminalKeyMapper {
+pub struct EmacsKeyBindingExecutor {
     key: KeyCode,
     next: Option<Box<dyn WorkflowHandler>>,
 }
 
-impl TerminalKeyMapper {
+impl EmacsKeyBindingExecutor {
     pub fn new(key: KeyCode) -> Self {
         Self { key, next: None }
     }
 }
 
 #[async_trait]
-impl WorkflowHandler for TerminalKeyMapper {
+impl WorkflowHandler for EmacsKeyBindingExecutor {
     #[allow(unused_variables)]
     async fn handle(
         &mut self,
@@ -72,10 +72,6 @@ impl WorkflowHandler for TerminalKeyMapper {
             }
             KeyCode::ArrowDown => {
                 terminal.input.set_history_next();
-                terminal.print_input_line()?;
-            }
-            KeyCode::Char(_) | KeyCode::Space => {
-                terminal.input.insert_before_cursor(&self.key.bytes());
                 terminal.print_input_line()?;
             }
             _ => {}
