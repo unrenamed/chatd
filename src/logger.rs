@@ -8,6 +8,7 @@ lazy_static::lazy_static! {
     static ref LOG_ENCODER: Box<PatternEncoder> = Box::new(PatternEncoder::new("{d(%Y-%m-%d %H:%M:%S)} | {({l}):5.5} | {f}:{L} — {m}{n}"));
 }
 
+#[cfg(not(tarpaulin_include))]
 pub fn setup(output: Option<String>, level: log::LevelFilter) -> Result<(), SetLoggerError> {
     // Configure a console appender
     let console_appender = {

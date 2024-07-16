@@ -1,31 +1,41 @@
 use async_trait::async_trait;
+use std::io::Write;
 use terminal_keycode::KeyCode;
 
 use crate::auth::Auth;
 use crate::chat::ChatRoom;
-use crate::terminal::Terminal;
+use crate::terminal::{CloseHandle, Terminal};
 
 use super::handler::WorkflowHandler;
 use super::WorkflowContext;
 
-pub struct EmacsKeyBindingExecutor {
+pub struct EmacsKeyBindingExecutor<H>
+where
+    H: Clone + Write + CloseHandle + Send,
+{
     key: KeyCode,
-    next: Option<Box<dyn WorkflowHandler>>,
+    next: Option<Box<dyn WorkflowHandler<H>>>,
 }
 
-impl EmacsKeyBindingExecutor {
+impl<H> EmacsKeyBindingExecutor<H>
+where
+    H: Clone + Write + CloseHandle + Send,
+{
     pub fn new(key: KeyCode) -> Self {
         Self { key, next: None }
     }
 }
 
 #[async_trait]
-impl WorkflowHandler for EmacsKeyBindingExecutor {
+impl<H> WorkflowHandler<H> for EmacsKeyBindingExecutor<H>
+where
+    H: Clone + Write + CloseHandle + Send,
+{
     #[allow(unused_variables)]
     async fn handle(
         &mut self,
         context: &mut WorkflowContext,
-        terminal: &mut Terminal,
+        terminal: &mut Terminal<H>,
         room: &mut ChatRoom,
         auth: &mut Auth,
     ) -> anyhow::Result<()> {
@@ -80,7 +90,7 @@ impl WorkflowHandler for EmacsKeyBindingExecutor {
         Ok(())
     }
 
-    fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler>> {
+    fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler<H>>> {
         &mut self.next
     }
 }

@@ -2,6 +2,10 @@ use log::{error, trace};
 use russh::server::Handle;
 use russh::ChannelId;
 
+pub trait CloseHandle {
+    fn close(&mut self);
+}
+
 #[derive(Clone)]
 pub struct TerminalHandle {
     handle: Handle,
@@ -19,8 +23,10 @@ impl TerminalHandle {
             closed: false,
         }
     }
+}
 
-    pub fn close(&mut self) {
+impl CloseHandle for TerminalHandle {
+    fn close(&mut self) {
         let handle = self.handle.clone();
         let channel_id = self.channel_id.clone();
 

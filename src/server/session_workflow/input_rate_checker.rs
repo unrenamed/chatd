@@ -1,19 +1,26 @@
 use async_trait::async_trait;
+use std::io::Write;
 
 use crate::auth::Auth;
 use crate::chat::{message, ratelimit, ChatRoom};
-use crate::terminal::Terminal;
+use crate::terminal::{CloseHandle, Terminal};
 
 use super::handler::{into_next, WorkflowHandler};
 use super::WorkflowContext;
 
 #[derive(Default)]
-pub struct InputRateChecker {
-    next: Option<Box<dyn WorkflowHandler>>,
+pub struct InputRateChecker<H>
+where
+    H: Clone + Write + CloseHandle + Send,
+{
+    next: Option<Box<dyn WorkflowHandler<H>>>,
 }
 
-impl InputRateChecker {
-    pub fn new(next: impl WorkflowHandler + 'static) -> Self {
+impl<H> InputRateChecker<H>
+where
+    H: Clone + Write + CloseHandle + Send,
+{
+    pub fn new(next: impl WorkflowHandler<H> + 'static) -> Self {
         Self {
             next: into_next(next),
         }
@@ -21,12 +28,15 @@ impl InputRateChecker {
 }
 
 #[async_trait]
-impl WorkflowHandler for InputRateChecker {
+impl<H> WorkflowHandler<H> for InputRateChecker<H>
+where
+    H: Clone + Write + CloseHandle + Send,
+{
     #[allow(unused_variables)]
     async fn handle(
         &mut self,
         context: &mut WorkflowContext,
-        terminal: &mut Terminal,
+        terminal: &mut Terminal<H>,
         room: &mut ChatRoom,
         auth: &mut Auth,
     ) -> anyhow::Result<()> {
@@ -52,7 +62,7 @@ impl WorkflowHandler for InputRateChecker {
         Ok(())
     }
 
-    fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler>> {
+    fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler<H>>> {
         &mut self.next
     }
 }

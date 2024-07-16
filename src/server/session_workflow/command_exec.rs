@@ -1,30 +1,45 @@
 use async_trait::async_trait;
-use std::fmt::Write;
+use std::io::Write;
 
 use crate::auth::{Auth, BanAttribute, BanQuery};
 use crate::chat::message::Message;
 use crate::chat::{
-    format_commands, message, ChatRoom, Command, CommandProps, OplistCommand, OplistLoadMode,
-    Theme, TimestampMode, User, UserName, UserStatus, WhitelistCommand, WhitelistLoadMode,
-    CHAT_COMMANDS, OPLIST_COMMANDS, WHITELIST_COMMANDS,
+    format_commands, message, ChatRoom, Command, OplistCommand, OplistLoadMode, Theme,
+    TimestampMode, User, UserName, UserStatus, WhitelistCommand, WhitelistLoadMode,
+    VISIBLE_NOOP_CHAT_COMMANDS, VISIBLE_OPLIST_COMMANDS, VISIBLE_OP_CHAT_COMMANDS,
+    VISIBLE_WHITELIST_COMMANDS,
 };
-use crate::terminal::Terminal;
+use crate::terminal::{CloseHandle, Terminal};
 use crate::utils::{self, sanitize};
 
 use super::handler::WorkflowHandler;
 use super::WorkflowContext;
 
-#[derive(Default)]
-pub struct CommandExecutor {
-    next: Option<Box<dyn WorkflowHandler>>,
+pub struct CommandExecutor<H>
+where
+    H: Clone + Write + CloseHandle + Send,
+{
+    next: Option<Box<dyn WorkflowHandler<H>>>,
+}
+
+impl<H> CommandExecutor<H>
+where
+    H: Clone + Write + CloseHandle + Send,
+{
+    pub fn new() -> Self {
+        Self { next: None }
+    }
 }
 
 #[async_trait]
-impl WorkflowHandler for CommandExecutor {
+impl<H> WorkflowHandler<H> for CommandExecutor<H>
+where
+    H: Clone + Write + CloseHandle + Send,
+{
     async fn handle(
         &mut self,
         context: &mut WorkflowContext,
-        terminal: &mut Terminal,
+        terminal: &mut Terminal<H>,
         room: &mut ChatRoom,
         auth: &mut Auth,
     ) -> anyhow::Result<()> {
@@ -266,33 +281,16 @@ impl WorkflowHandler for CommandExecutor {
                 let member = room.find_member(username);
                 let user = member.user.clone();
 
-                let mut to_display: Vec<&Command> = CHAT_COMMANDS
-                    .iter()
-                    .filter(|cmd| cmd.is_visible())
-                    .collect();
-
-                to_display.sort_by(|a, b| a.cmd().len().cmp(&b.cmd().len()));
-
                 let mut help = format!("Available commands: {}", utils::NEWLINE);
-                let noop_commands: Vec<&Command> = to_display
-                    .iter()
-                    .filter(|c| !c.is_op())
-                    .map(|c| *c)
-                    .collect();
-                help.push_str(&format_commands(noop_commands));
+                help.push_str(&format_commands(&VISIBLE_NOOP_CHAT_COMMANDS));
 
                 if auth.is_op(&user.public_key.clone().into()) {
-                    let op_commands: Vec<&Command> = to_display
-                        .iter()
-                        .filter(|c| c.is_op())
-                        .map(|c| *c)
-                        .collect();
                     help.push_str(&format!(
                         "{}{}Operator commands: {}{}",
                         utils::NEWLINE,
                         utils::NEWLINE,
                         utils::NEWLINE,
-                        &format_commands(op_commands)
+                        &format_commands(&VISIBLE_OP_CHAT_COMMANDS)
                     ));
                 }
 
@@ -720,6 +718,8 @@ impl WorkflowHandler for CommandExecutor {
                 }
             }
             Command::Banned => 'label: {
+                use std::fmt::Write;
+
                 if !auth.is_op(&user.public_key.clone().into()) {
                     let message =
                         message::Error::new(user.into(), "must be an operator".to_string());
@@ -769,7 +769,7 @@ impl WorkflowHandler for CommandExecutor {
         Ok(())
     }
 
-    fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler>> {
+    fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler<H>>> {
         &mut self.next
     }
 }
@@ -979,15 +979,8 @@ async fn exec_whitelist_command(
             room.send_message(message.into()).await?;
         }
         WhitelistCommand::Help => {
-            let mut to_display: Vec<&WhitelistCommand> = WHITELIST_COMMANDS
-                .iter()
-                .filter(|cmd| cmd.is_visible())
-                .collect();
-
-            to_display.sort_by(|a, b| a.cmd().len().cmp(&b.cmd().len()));
-
             let mut help = format!("Available commands: {}", utils::NEWLINE);
-            help.push_str(&format_commands(to_display));
+            help.push_str(&format_commands(&VISIBLE_WHITELIST_COMMANDS));
 
             let message = message::System::new(user.into(), help);
             room.send_message(message.into()).await?;
@@ -1151,15 +1144,8 @@ async fn exec_oplist_command(
             room.send_message(message.into()).await?;
         }
         OplistCommand::Help => {
-            let mut to_display: Vec<&OplistCommand> = OPLIST_COMMANDS
-                .iter()
-                .filter(|cmd| cmd.is_visible())
-                .collect();
-
-            to_display.sort_by(|a, b| a.cmd().len().cmp(&b.cmd().len()));
-
             let mut help = format!("Available commands: {}", utils::NEWLINE);
-            help.push_str(&format_commands(to_display));
+            help.push_str(&format_commands(&VISIBLE_OPLIST_COMMANDS));
 
             let message = message::System::new(user.into(), help);
             room.send_message(message.into()).await?;

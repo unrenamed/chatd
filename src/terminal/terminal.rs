@@ -1,20 +1,22 @@
+use std::io::Write;
+
 use crossterm::terminal::{Clear, ClearType};
 use crossterm::{cursor, queue, style};
-use std::io::Write;
 use unicode_segmentation::UnicodeSegmentation;
 
+use super::input::TerminalInput;
+use super::{unicode, CloseHandle};
 use crate::utils;
 
-use super::handle::TerminalHandle;
-use super::input::TerminalInput;
-use super::unicode;
-
 #[derive(Clone)]
-pub struct Terminal {
+pub struct Terminal<H>
+where
+    H: Clone + Write + CloseHandle,
+{
     pub input: TerminalInput,
     prompt: String,
     prompt_display_width: u16,
-    handle: TerminalHandle,
+    handle: H,
     outbuff: Vec<u8>,
     term_width: u16,
     term_height: u16,
@@ -24,8 +26,11 @@ pub struct Terminal {
     input_end_y: u16,
 }
 
-impl Terminal {
-    pub fn new(handle: TerminalHandle) -> Self {
+impl<H> Terminal<H>
+where
+    H: Clone + Write + CloseHandle,
+{
+    pub fn new(handle: H) -> Self {
         Self {
             handle,
             prompt: String::new(),
@@ -39,6 +44,11 @@ impl Terminal {
             input_end_x: 0,
             input_end_y: 0,
         }
+    }
+
+    #[cfg(test)]
+    pub fn handle(&mut self) -> &mut H {
+        &mut self.handle
     }
 
     pub fn set_size(&mut self, width: u16, height: u16) {

@@ -1,20 +1,27 @@
 use async_trait::async_trait;
 use chrono::Utc;
+use std::io::Write;
 
 use crate::auth::Auth;
 use crate::chat::{message, ChatRoom, Command, CommandParseError};
-use crate::terminal::Terminal;
+use crate::terminal::{CloseHandle, Terminal};
 
 use super::handler::{into_next, WorkflowHandler};
 use super::WorkflowContext;
 
 #[derive(Default)]
-pub struct CommandParser {
-    next: Option<Box<dyn WorkflowHandler>>,
+pub struct CommandParser<H>
+where
+    H: Clone + Write + CloseHandle + Send,
+{
+    next: Option<Box<dyn WorkflowHandler<H>>>,
 }
 
-impl CommandParser {
-    pub fn new(next: impl WorkflowHandler + 'static) -> Self {
+impl<H> CommandParser<H>
+where
+    H: Clone + Write + CloseHandle + Send,
+{
+    pub fn new(next: impl WorkflowHandler<H> + 'static) -> Self {
         Self {
             next: into_next(next),
         }
@@ -22,12 +29,15 @@ impl CommandParser {
 }
 
 #[async_trait]
-impl WorkflowHandler for CommandParser {
+impl<H> WorkflowHandler<H> for CommandParser<H>
+where
+    H: Clone + Write + CloseHandle + Send,
+{
     #[allow(unused_variables)]
     async fn handle(
         &mut self,
         context: &mut WorkflowContext,
-        terminal: &mut Terminal,
+        terminal: &mut Terminal<H>,
         room: &mut ChatRoom,
         auth: &mut Auth,
     ) -> anyhow::Result<()> {
@@ -68,7 +78,7 @@ impl WorkflowHandler for CommandParser {
         Ok(())
     }
 
-    fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler>> {
+    fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler<H>>> {
         &mut self.next
     }
 }

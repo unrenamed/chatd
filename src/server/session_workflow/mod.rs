@@ -18,24 +18,33 @@ use input_validator::InputValidator;
 
 pub use context::WorkflowContext;
 pub use handler::WorkflowHandler;
+
+use std::io::Write;
 use terminal_keycode::KeyCode;
 
-pub fn autocomplete() -> Autocomplete {
-    Autocomplete::default()
+use crate::terminal::CloseHandle;
+
+pub fn autocomplete<H: Clone + Write + CloseHandle + Send>() -> Autocomplete<H> {
+    Autocomplete::new()
 }
 
-pub fn emacs_key(code: KeyCode) -> EmacsKeyBindingExecutor {
+pub fn emacs_key<H: Clone + Write + CloseHandle + Send>(
+    code: KeyCode,
+) -> EmacsKeyBindingExecutor<H> {
     EmacsKeyBindingExecutor::new(code)
 }
 
-pub fn env(name: String, value: String) -> EnvParser {
-    let command_executor = CommandExecutor::default();
+pub fn env<H: Clone + Write + CloseHandle + Send + 'static>(
+    name: String,
+    value: String,
+) -> EnvParser<H> {
+    let command_executor = CommandExecutor::new();
     let command_parser = CommandParser::new(command_executor);
     EnvParser::new(name, value, command_parser)
 }
 
-pub fn input_submit() -> InputRateChecker {
-    let command_executor = CommandExecutor::default();
+pub fn input_submit<H: Clone + Write + CloseHandle + Send + 'static>() -> InputRateChecker<H> {
+    let command_executor = CommandExecutor::new();
     let command_parser = CommandParser::new(command_executor);
     let input_validator = InputValidator::new(command_parser);
     InputRateChecker::new(input_validator)

@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use std::io::Write;
 
 use super::handler::WorkflowHandler;
 use super::WorkflowContext;
@@ -6,22 +7,37 @@ use super::WorkflowContext;
 use crate::auth::Auth;
 use crate::chat::{
     ChatRoom, Command, CommandProps, OplistCommand, OplistLoadMode, Theme, TimestampMode,
-    WhitelistCommand, WhitelistLoadMode, CHAT_COMMANDS, OPLIST_COMMANDS, WHITELIST_COMMANDS,
+    WhitelistCommand, WhitelistLoadMode, CHAT_COMMANDS, NOOP_CHAT_COMMANDS, OPLIST_COMMANDS,
+    WHITELIST_COMMANDS,
 };
-use crate::terminal::Terminal;
+use crate::terminal::{CloseHandle, Terminal};
 
-#[derive(Default)]
-pub struct Autocomplete {
-    next: Option<Box<dyn WorkflowHandler>>,
+pub struct Autocomplete<H>
+where
+    H: Clone + Write + CloseHandle + Send,
+{
+    next: Option<Box<dyn WorkflowHandler<H>>>,
+}
+
+impl<H> Autocomplete<H>
+where
+    H: Clone + Write + CloseHandle + Send,
+{
+    pub fn new() -> Self {
+        Self { next: None }
+    }
 }
 
 #[async_trait]
-impl WorkflowHandler for Autocomplete {
+impl<H> WorkflowHandler<H> for Autocomplete<H>
+where
+    H: Clone + Write + CloseHandle + Send,
+{
     #[allow(unused_variables)]
     async fn handle(
         &mut self,
         context: &mut WorkflowContext,
-        terminal: &mut Terminal,
+        terminal: &mut Terminal<H>,
         room: &mut ChatRoom,
         auth: &mut Auth,
     ) -> anyhow::Result<()> {
@@ -40,7 +56,12 @@ impl WorkflowHandler for Autocomplete {
 
         let cmd = words_iter.next().unwrap_or(&input_str);
         let (cmd_prefix, cmd_end_pos, cmd_prefix_end_pos) = get_argument_details(cmd, 0);
-        let complete_cmd = match CHAT_COMMANDS.iter().find(|c| c.has_prefix(&cmd_prefix)) {
+
+        let commands = match auth.is_op(&context.user.public_key) {
+            true => CHAT_COMMANDS.clone(),
+            false => NOOP_CHAT_COMMANDS.clone(),
+        };
+        let complete_cmd = match commands.iter().find(|c| c.has_prefix(&cmd_prefix)) {
             Some(cmd) => cmd,
             None => return Ok(()),
         };
@@ -151,15 +172,15 @@ impl WorkflowHandler for Autocomplete {
         Ok(())
     }
 
-    fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler>> {
+    fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler<H>>> {
         &mut self.next
     }
 }
 
-fn complete_argument<'a, F, T>(
+fn complete_argument<'a, F, T, H: Clone + Write + CloseHandle + Send>(
     arg: &str,
     prev_arg_end_pos: usize,
-    terminal: &mut Terminal,
+    terminal: &mut Terminal<H>,
     get_completion: F,
 ) -> anyhow::Result<()>
 where
@@ -185,11 +206,631 @@ fn get_argument_details(arg: &str, prev_arg_end_pos: usize) -> (String, usize, u
     (arg_prefix, arg_end_pos, arg_prefix_end_pos)
 }
 
-fn paste_complete_text(terminal: &mut Terminal, end_pos: usize, text: &str) -> anyhow::Result<()> {
+fn paste_complete_text<H: Clone + Write + CloseHandle + Send>(
+    terminal: &mut Terminal<H>,
+    end_pos: usize,
+    text: &str,
+) -> anyhow::Result<()> {
     terminal.input.move_cursor_to(end_pos);
     terminal.input.remove_last_word_before_cursor();
     terminal.input.insert_before_cursor(text.as_bytes());
     terminal.input.insert_before_cursor(" ".as_bytes());
     terminal.print_input_line()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod should {
+    use crate::{chat::User, pubkey::PubKey};
+    use mockall::mock;
+    use tokio::sync::mpsc;
+    use tokio::sync::watch;
+
+    use super::*;
+
+    mock! {
+        pub Handle {}
+
+        impl Write for Handle {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize>;
+            fn flush(&mut self) -> std::io::Result<()>;
+        }
+
+        impl Clone for Handle {
+            fn clone(&self) -> Self;
+        }
+
+        impl CloseHandle for Handle {
+            fn close(&mut self) {}
+        }
+    }
+
+    macro_rules! setup {
+        () => {{
+            let user = User::default();
+            let auth = Auth::default();
+            let terminal = Terminal::new(MockHandle::new());
+            let room = ChatRoom::new("Hello Chatters!");
+            let context = WorkflowContext::new(user);
+            let autocomplete: Autocomplete<MockHandle> = Autocomplete::new();
+            (auth, terminal, room, context, autocomplete)
+        }};
+    }
+
+    #[tokio::test]
+    async fn return_ok() {
+        let (mut auth, mut terminal, mut room, mut context, mut autocomplete) = setup!();
+        assert!(autocomplete
+            .handle(&mut context, &mut terminal, &mut room, &mut auth)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn complete_all_noop_commands() {
+        let (mut auth, mut terminal, mut room, mut context, mut autocomplete) = setup!();
+
+        let prefix_command_map = vec![
+            ("/ms", "/msg"),
+            ("/ex", "/exit"),
+            ("/aw", "/away"),
+            ("/ba", "/back"),
+            ("/na", "/name"),
+            ("/re", "/reply"),
+            ("/fo", "/focus"),
+            ("/us", "/users"),
+            ("/wh", "/whois"),
+            ("/th", "/theme"),
+            ("/qu", "/quiet"),
+            ("/ig", "/ignore"),
+            ("/un", "/unignore"),
+            ("/ti", "/timestamp"),
+        ];
+
+        terminal
+            .handle()
+            .expect_write()
+            .times(..)
+            .returning(|buf| Ok(buf.len()));
+
+        terminal
+            .handle()
+            .expect_flush()
+            .times(14)
+            .returning(|| Ok(()));
+
+        for (prefix, command) in prefix_command_map {
+            terminal.input.clear();
+            terminal.input.insert_before_cursor(prefix.as_bytes());
+
+            let _ = autocomplete
+                .handle(&mut context, &mut terminal, &mut room, &mut auth)
+                .await;
+
+            assert_eq!(terminal.input.to_string(), format!("{command} "));
+        }
+    }
+
+    #[tokio::test]
+    async fn complete_all_op_commands() {
+        let (mut auth, mut terminal, mut room, mut context, mut autocomplete) = setup!();
+        auth.add_operator(context.user.public_key.clone());
+
+        let prefix_command_map = vec![
+            ("/ba", "/ban"),
+            ("/mu", "/mute"),
+            ("/ki", "/kick"),
+            ("/mo", "/motd"),
+            ("/bann", "/banned"),
+            ("/op", "/oplist"),
+            ("/whi", "/whitelist"),
+        ];
+
+        terminal
+            .handle()
+            .expect_write()
+            .times(..)
+            .returning(|buf| Ok(buf.len()));
+
+        terminal
+            .handle()
+            .expect_flush()
+            .times(7)
+            .returning(|| Ok(()));
+
+        for (prefix, command) in prefix_command_map {
+            terminal.input.clear();
+            terminal.input.insert_before_cursor(prefix.as_bytes());
+
+            let _ = autocomplete
+                .handle(&mut context, &mut terminal, &mut room, &mut auth)
+                .await;
+
+            assert_eq!(terminal.input.to_string(), format!("{command} "));
+        }
+    }
+
+    #[tokio::test]
+    async fn not_complete_op_commands_when_user_is_not_operator() {
+        let (mut auth, mut terminal, mut room, mut context, mut autocomplete) = setup!();
+
+        let prefix_command_map = vec![
+            ("/ba", "/ban"),
+            ("/mu", "/mute"),
+            ("/ki", "/kick"),
+            ("/mo", "/motd"),
+            ("/bann", "/banned"),
+            ("/op", "/oplist"),
+            ("/whi", "/whitelist"),
+        ];
+
+        terminal
+            .handle()
+            .expect_write()
+            .times(..)
+            .returning(|buf| Ok(buf.len()));
+
+        terminal
+            .handle()
+            .expect_flush()
+            .times(1)
+            .returning(|| Ok(()));
+
+        for (prefix, command) in prefix_command_map {
+            terminal.input.clear();
+            terminal.input.insert_before_cursor(prefix.as_bytes());
+
+            let _ = autocomplete
+                .handle(&mut context, &mut terminal, &mut room, &mut auth)
+                .await;
+
+            assert_ne!(terminal.input.to_string(), format!("{command} "));
+        }
+    }
+
+    #[tokio::test]
+    async fn complete_hidden_commands() {
+        let (mut auth, mut terminal, mut room, mut context, mut autocomplete) = setup!();
+
+        let prefix_command_map = vec![
+            ("/m", "/me"),
+            ("/sl", "/slap"),
+            ("/sh", "/shrug"),
+            ("/he", "/help"),
+            ("/ve", "/version"),
+            ("/up", "/uptime"),
+        ];
+
+        terminal
+            .handle()
+            .expect_write()
+            .times(..)
+            .returning(|buf| Ok(buf.len()));
+
+        terminal
+            .handle()
+            .expect_flush()
+            .times(6)
+            .returning(|| Ok(()));
+
+        for (prefix, command) in prefix_command_map {
+            terminal.input.clear();
+            terminal.input.insert_before_cursor(prefix.as_bytes());
+
+            let _ = autocomplete
+                .handle(&mut context, &mut terminal, &mut room, &mut auth)
+                .await;
+
+            assert_eq!(terminal.input.to_string(), format!("{command} "));
+        }
+    }
+
+    #[tokio::test]
+    async fn complete_theme_argument() {
+        let (mut auth, mut terminal, mut room, mut context, mut autocomplete) = setup!();
+
+        let prefix_full_map = vec![("mo", "mono"), ("co", "colors"), ("ha", "hacker")];
+
+        terminal
+            .handle()
+            .expect_write()
+            .times(..)
+            .returning(|buf| Ok(buf.len()));
+
+        terminal
+            .handle()
+            .expect_flush()
+            .times(3)
+            .returning(|| Ok(()));
+
+        for (prefix, command) in prefix_full_map {
+            terminal.input.clear();
+            terminal
+                .input
+                .insert_before_cursor(&[b"/theme ", prefix.as_bytes()].concat());
+
+            let _ = autocomplete
+                .handle(&mut context, &mut terminal, &mut room, &mut auth)
+                .await;
+
+            assert_eq!(terminal.input.to_string(), format!("/theme {command} "));
+        }
+    }
+
+    #[tokio::test]
+    async fn complete_timestamp_argument() {
+        let (mut auth, mut terminal, mut room, mut context, mut autocomplete) = setup!();
+
+        let prefix_full_map = vec![("ti", "time"), ("da", "datetime")];
+
+        terminal
+            .handle()
+            .expect_write()
+            .times(..)
+            .returning(|buf| Ok(buf.len()));
+
+        terminal
+            .handle()
+            .expect_flush()
+            .times(2)
+            .returning(|| Ok(()));
+
+        for (prefix, command) in prefix_full_map {
+            terminal.input.clear();
+            terminal
+                .input
+                .insert_before_cursor(&[b"/timestamp ", prefix.as_bytes()].concat());
+
+            let _ = autocomplete
+                .handle(&mut context, &mut terminal, &mut room, &mut auth)
+                .await;
+
+            assert_eq!(terminal.input.to_string(), format!("/timestamp {command} "));
+        }
+    }
+
+    #[tokio::test]
+    async fn complete_username_argument() {
+        let (mut auth, mut terminal, mut room, mut context, mut autocomplete) = setup!();
+
+        let mut alice = User::default();
+        alice.set_username("alice".into());
+        let mut bob = User::default();
+        bob.set_username("bob".into());
+
+        let (alice_msg_tx, _) = mpsc::channel(1);
+        let (alice_exit_tx, _) = watch::channel(());
+        room.join(
+            1,
+            alice.username.into(),
+            PubKey::default(),
+            String::default(),
+            alice_msg_tx,
+            alice_exit_tx,
+        )
+        .await
+        .unwrap();
+
+        let (bob_msg_tx, _) = mpsc::channel(1);
+        let (bob_exit_tx, _) = watch::channel(());
+        room.join(
+            2,
+            bob.username.into(),
+            PubKey::default(),
+            String::default(),
+            bob_msg_tx,
+            bob_exit_tx,
+        )
+        .await
+        .unwrap();
+
+        let prefix_full_map = vec![("al", "alice"), ("b", "bob")];
+
+        terminal
+            .handle()
+            .expect_write()
+            .times(..)
+            .returning(|buf| Ok(buf.len()));
+
+        terminal
+            .handle()
+            .expect_flush()
+            .times(2)
+            .returning(|| Ok(()));
+
+        for (prefix, name) in prefix_full_map {
+            terminal.input.clear();
+            terminal
+                .input
+                .insert_before_cursor(&[b"/msg ", prefix.as_bytes()].concat());
+
+            let _ = autocomplete
+                .handle(&mut context, &mut terminal, &mut room, &mut auth)
+                .await;
+
+            assert_eq!(terminal.input.to_string(), format!("/msg {name} "));
+        }
+    }
+
+    #[tokio::test]
+    async fn complete_whitelist_subcommand() {
+        let (mut auth, mut terminal, mut room, mut context, mut autocomplete) = setup!();
+        auth.add_operator(context.user.public_key.clone());
+
+        let prefix_command_map = vec![
+            ("o", "on"),
+            ("of", "off"),
+            ("a", "add"),
+            ("re", "remove"),
+            ("rev", "reverify"),
+            ("s", "save"),
+            ("l", "load"),
+            ("st", "status"),
+            ("h", "help"),
+        ];
+
+        terminal
+            .handle()
+            .expect_write()
+            .times(..)
+            .returning(|buf| Ok(buf.len()));
+
+        terminal
+            .handle()
+            .expect_flush()
+            .times(9)
+            .returning(|| Ok(()));
+
+        for (prefix, command) in prefix_command_map {
+            terminal.input.clear();
+            terminal
+                .input
+                .insert_before_cursor(&[b"/whitelist ", prefix.as_bytes()].concat());
+
+            let _ = autocomplete
+                .handle(&mut context, &mut terminal, &mut room, &mut auth)
+                .await;
+
+            assert_eq!(terminal.input.to_string(), format!("/whitelist {command} "));
+        }
+    }
+
+    #[tokio::test]
+    async fn complete_oplist_subcommand() {
+        let (mut auth, mut terminal, mut room, mut context, mut autocomplete) = setup!();
+        auth.add_operator(context.user.public_key.clone());
+
+        let prefix_command_map = vec![
+            ("a", "add"),
+            ("re", "remove"),
+            ("s", "save"),
+            ("l", "load"),
+            ("st", "status"),
+            ("h", "help"),
+        ];
+
+        terminal
+            .handle()
+            .expect_write()
+            .times(..)
+            .returning(|buf| Ok(buf.len()));
+
+        terminal
+            .handle()
+            .expect_flush()
+            .times(6)
+            .returning(|| Ok(()));
+
+        for (prefix, command) in prefix_command_map {
+            terminal.input.clear();
+            terminal
+                .input
+                .insert_before_cursor(&[b"/oplist ", prefix.as_bytes()].concat());
+
+            let _ = autocomplete
+                .handle(&mut context, &mut terminal, &mut room, &mut auth)
+                .await;
+
+            assert_eq!(terminal.input.to_string(), format!("/oplist {command} "));
+        }
+    }
+
+    #[tokio::test]
+    async fn complete_whiltelist_load_command_arguments() {
+        let (mut auth, mut terminal, mut room, mut context, mut autocomplete) = setup!();
+        auth.add_operator(context.user.public_key.clone());
+
+        let prefix_arg_map = vec![("me", "merge"), ("re", "replace")];
+
+        terminal
+            .handle()
+            .expect_write()
+            .times(..)
+            .returning(|buf| Ok(buf.len()));
+
+        terminal
+            .handle()
+            .expect_flush()
+            .times(2)
+            .returning(|| Ok(()));
+
+        for (prefix, arg) in prefix_arg_map {
+            terminal.input.clear();
+            terminal
+                .input
+                .insert_before_cursor(&[b"/whitelist load ", prefix.as_bytes()].concat());
+
+            let _ = autocomplete
+                .handle(&mut context, &mut terminal, &mut room, &mut auth)
+                .await;
+
+            assert_eq!(
+                terminal.input.to_string(),
+                format!("/whitelist load {arg} ")
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn complete_oplist_load_command_arguments() {
+        let (mut auth, mut terminal, mut room, mut context, mut autocomplete) = setup!();
+        auth.add_operator(context.user.public_key.clone());
+
+        let prefix_arg_map = vec![("me", "merge"), ("re", "replace")];
+
+        terminal
+            .handle()
+            .expect_write()
+            .times(..)
+            .returning(|buf| Ok(buf.len()));
+
+        terminal
+            .handle()
+            .expect_flush()
+            .times(2)
+            .returning(|| Ok(()));
+
+        for (prefix, arg) in prefix_arg_map {
+            terminal.input.clear();
+            terminal
+                .input
+                .insert_before_cursor(&[b"/oplist load ", prefix.as_bytes()].concat());
+
+            let _ = autocomplete
+                .handle(&mut context, &mut terminal, &mut room, &mut auth)
+                .await;
+
+            assert_eq!(terminal.input.to_string(), format!("/oplist load {arg} "));
+        }
+    }
+
+    #[tokio::test]
+    async fn complete_whitelist_add_command_arguments() {
+        let (mut auth, mut terminal, mut room, mut context, mut autocomplete) = setup!();
+        auth.add_operator(context.user.public_key.clone());
+
+        let mut alice = User::default();
+        alice.set_username("alice".into());
+        let mut bob = User::default();
+        bob.set_username("bob".into());
+
+        let (alice_msg_tx, _) = mpsc::channel(1);
+        let (alice_exit_tx, _) = watch::channel(());
+        room.join(
+            1,
+            alice.username.into(),
+            PubKey::default(),
+            String::default(),
+            alice_msg_tx,
+            alice_exit_tx,
+        )
+        .await
+        .unwrap();
+
+        let (bob_msg_tx, _) = mpsc::channel(1);
+        let (bob_exit_tx, _) = watch::channel(());
+        room.join(
+            2,
+            bob.username.into(),
+            PubKey::default(),
+            String::default(),
+            bob_msg_tx,
+            bob_exit_tx,
+        )
+        .await
+        .unwrap();
+
+        terminal
+            .handle()
+            .expect_write()
+            .times(..)
+            .returning(|buf| Ok(buf.len()));
+
+        terminal
+            .handle()
+            .expect_flush()
+            .times(2)
+            .returning(|| Ok(()));
+
+        terminal.input.clear();
+        terminal.input.insert_before_cursor(b"/whitelist add al");
+        let _ = autocomplete
+            .handle(&mut context, &mut terminal, &mut room, &mut auth)
+            .await;
+        assert_eq!(terminal.input.to_string(), format!("/whitelist add alice "));
+
+        terminal.input.insert_before_cursor(b"bo");
+        let _ = autocomplete
+            .handle(&mut context, &mut terminal, &mut room, &mut auth)
+            .await;
+        assert_eq!(
+            terminal.input.to_string(),
+            format!("/whitelist add alice bob ")
+        );
+    }
+
+    #[tokio::test]
+    async fn complete_oplist_add_command_arguments() {
+        let (mut auth, mut terminal, mut room, mut context, mut autocomplete) = setup!();
+        auth.add_operator(context.user.public_key.clone());
+
+        let mut alice = User::default();
+        alice.set_username("alice".into());
+        let mut bob = User::default();
+        bob.set_username("bob".into());
+
+        let (alice_msg_tx, _) = mpsc::channel(1);
+        let (alice_exit_tx, _) = watch::channel(());
+        room.join(
+            1,
+            alice.username.into(),
+            PubKey::default(),
+            String::default(),
+            alice_msg_tx,
+            alice_exit_tx,
+        )
+        .await
+        .unwrap();
+
+        let (bob_msg_tx, _) = mpsc::channel(1);
+        let (bob_exit_tx, _) = watch::channel(());
+        room.join(
+            2,
+            bob.username.into(),
+            PubKey::default(),
+            String::default(),
+            bob_msg_tx,
+            bob_exit_tx,
+        )
+        .await
+        .unwrap();
+
+        terminal
+            .handle()
+            .expect_write()
+            .times(..)
+            .returning(|buf| Ok(buf.len()));
+
+        terminal
+            .handle()
+            .expect_flush()
+            .times(2)
+            .returning(|| Ok(()));
+
+        terminal.input.clear();
+        terminal.input.insert_before_cursor(b"/oplist add al");
+        let _ = autocomplete
+            .handle(&mut context, &mut terminal, &mut room, &mut auth)
+            .await;
+        assert_eq!(terminal.input.to_string(), format!("/oplist add alice "));
+
+        terminal.input.insert_before_cursor(b"bo");
+        let _ = autocomplete
+            .handle(&mut context, &mut terminal, &mut room, &mut auth)
+            .await;
+        assert_eq!(
+            terminal.input.to_string(),
+            format!("/oplist add alice bob ")
+        );
+    }
 }

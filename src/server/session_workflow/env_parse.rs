@@ -1,21 +1,28 @@
 use async_trait::async_trait;
+use std::io::Write;
 
 use crate::auth::Auth;
 use crate::chat::ChatRoom;
 use crate::server::env::Env;
-use crate::terminal::Terminal;
+use crate::terminal::{CloseHandle, Terminal};
 
 use super::handler::{into_next, WorkflowHandler};
 use super::WorkflowContext;
 
-pub struct EnvParser {
+pub struct EnvParser<H>
+where
+    H: Clone + Write + CloseHandle + Send,
+{
     name: String,
     value: String,
-    next: Option<Box<dyn WorkflowHandler>>,
+    next: Option<Box<dyn WorkflowHandler<H>>>,
 }
 
-impl EnvParser {
-    pub fn new(name: String, value: String, next: impl WorkflowHandler + 'static) -> Self {
+impl<H> EnvParser<H>
+where
+    H: Clone + Write + CloseHandle + Send,
+{
+    pub fn new(name: String, value: String, next: impl WorkflowHandler<H> + 'static) -> Self {
         Self {
             name,
             value,
@@ -25,12 +32,15 @@ impl EnvParser {
 }
 
 #[async_trait]
-impl WorkflowHandler for EnvParser {
+impl<H> WorkflowHandler<H> for EnvParser<H>
+where
+    H: Clone + Write + CloseHandle + Send,
+{
     #[allow(unused_variables)]
     async fn handle(
         &mut self,
         context: &mut WorkflowContext,
-        terminal: &mut Terminal,
+        terminal: &mut Terminal<H>,
         room: &mut ChatRoom,
         auth: &mut Auth,
     ) -> anyhow::Result<()> {
@@ -50,7 +60,7 @@ impl WorkflowHandler for EnvParser {
         Ok(())
     }
 
-    fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler>> {
+    fn next(&mut self) -> &mut Option<Box<dyn WorkflowHandler<H>>> {
         &mut self.next
     }
 }

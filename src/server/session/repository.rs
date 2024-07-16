@@ -96,7 +96,7 @@ impl SessionRepository {
         id: SessionId,
         room: Arc<Mutex<ChatRoom>>,
         auth: Arc<Mutex<Auth>>,
-        terminal: Terminal,
+        terminal: Terminal<TerminalHandle>,
         event_rx: Receiver<SessionEvent>,
         message_rx: Receiver<String>,
         exit_rx: watch::Receiver<()>,
@@ -132,7 +132,7 @@ impl SessionRepository {
         id: SessionId,
         room: Arc<Mutex<ChatRoom>>,
         auth: Arc<Mutex<Auth>>,
-        terminal: Arc<Mutex<Terminal>>,
+        terminal: Arc<Mutex<Terminal<TerminalHandle>>>,
         mut event_rx: Receiver<SessionEvent>,
         disconnect_tx: watch::Sender<()>,
     ) {
@@ -214,7 +214,7 @@ impl SessionRepository {
     async fn process_room_events(
         id: SessionId,
         room: Arc<Mutex<ChatRoom>>,
-        terminal: Arc<Mutex<Terminal>>,
+        terminal: Arc<Mutex<Terminal<TerminalHandle>>>,
         mut message_rx: Receiver<String>,
         mut exit_rx: watch::Receiver<()>,
         mut disconnect_rx: watch::Receiver<()>,
