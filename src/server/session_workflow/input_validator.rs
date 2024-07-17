@@ -66,3 +66,122 @@ where
         &mut self.next
     }
 }
+
+#[cfg(test)]
+mod should {
+    use crate::chat::User;
+    use crate::server::session_workflow::input_rate_checker::InputRateChecker;
+    use mockall::mock;
+
+    use super::*;
+
+    mock! {
+        pub Handle {}
+
+        impl Write for Handle {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize>;
+            fn flush(&mut self) -> std::io::Result<()>;
+        }
+
+        impl Clone for Handle {
+            fn clone(&self) -> Self;
+        }
+
+        impl CloseHandle for Handle {
+            fn close(&mut self) {}
+        }
+    }
+
+    macro_rules! setup {
+        () => {{
+            let user = User::default();
+            let auth = Auth::default();
+            let terminal = Terminal::new(MockHandle::new());
+            let room = ChatRoom::new("Hello Chatters!");
+            let context = WorkflowContext::new(user);
+            (auth, terminal, room, context)
+        }};
+    }
+
+    #[tokio::test]
+    async fn return_ok() {
+        let (mut auth, mut terminal, mut room, mut context) = setup!();
+        let checker: InputRateChecker<MockHandle> = InputRateChecker::default();
+        let mut parser = InputValidator::new(checker);
+
+        assert!(parser
+            .handle(&mut context, &mut terminal, &mut room, &mut auth)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn return_next_handler() {
+        let checker: InputRateChecker<MockHandle> = InputRateChecker::default();
+        let mut parser = InputValidator::new(checker);
+        assert!(parser.next().is_some());
+    }
+
+    #[tokio::test]
+    async fn unset_next_handler_when_input_is_empty() {
+        let (mut auth, mut terminal, mut room, mut context) = setup!();
+        let checker: InputRateChecker<MockHandle> = InputRateChecker::default();
+        let mut parser = InputValidator::new(checker);
+
+        terminal.input.clear();
+
+        let _ = parser
+            .handle(&mut context, &mut terminal, &mut room, &mut auth)
+            .await;
+        assert!(parser.next().is_none());
+    }
+
+    #[tokio::test]
+    async fn unset_next_handler_when_input_is_whitespace_only() {
+        let (mut auth, mut terminal, mut room, mut context) = setup!();
+        let checker: InputRateChecker<MockHandle> = InputRateChecker::default();
+        let mut parser = InputValidator::new(checker);
+
+        terminal.input.clear();
+        terminal.input.insert_before_cursor(b"     ");
+
+        let _ = parser
+            .handle(&mut context, &mut terminal, &mut room, &mut auth)
+            .await;
+        assert!(parser.next().is_none());
+    }
+
+    #[tokio::test]
+    async fn unset_next_handler_when_input_is_too_long() {
+        let (mut auth, mut terminal, mut room, mut context) = setup!();
+        let checker: InputRateChecker<MockHandle> = InputRateChecker::default();
+        let mut parser = InputValidator::new(checker);
+
+        terminal.input.clear();
+        terminal
+            .input
+            .insert_before_cursor("".repeat(1025).as_bytes());
+
+        let _ = parser
+            .handle(&mut context, &mut terminal, &mut room, &mut auth)
+            .await;
+        assert!(parser.next().is_none());
+    }
+
+    #[tokio::test]
+    async fn add_command_to_context_when_input_is_valid() {
+        let (mut auth, mut terminal, mut room, mut context) = setup!();
+        let checker: InputRateChecker<MockHandle> = InputRateChecker::default();
+        let mut parser = InputValidator::new(checker);
+
+        terminal.input.clear();
+        terminal.input.insert_before_cursor(b"/help");
+
+        let _ = parser
+            .handle(&mut context, &mut terminal, &mut room, &mut auth)
+            .await;
+
+        assert_eq!(context.command_str, Some("/help".into()));
+        assert!(parser.next().is_some());
+    }
+}
