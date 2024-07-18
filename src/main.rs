@@ -16,6 +16,7 @@ mod terminal;
 mod utils;
 
 #[tokio::main]
+#[cfg(not(tarpaulin_include))]
 async fn main() {
     let cli = Cli::parse();
 
