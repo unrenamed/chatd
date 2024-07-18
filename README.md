@@ -1,3 +1,8 @@
+[![Latest Version](https://img.shields.io/crates/v/chatd)](https://crates.io/crates/chatd)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![Build Status](https://github.com/unrenamed/chatd/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/unrenamed/chatd/actions/workflows/build.yml)
+[![Coverage Status](https://coveralls.io/repos/github/unrenamed/chatd/badge.svg)](https://coveralls.io/github/unrenamed/chatd)
+
 # chatd
 
 🚧 Work in Progress! 🚧
