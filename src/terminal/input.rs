@@ -11,9 +11,9 @@ const MAX_HISTORY_SIZE: usize = 20;
 struct InputState {
     text: String,           // String representing user input
     char_count: usize,      // Number of characters in the text
-    display_width: usize,   //
+    display_width: usize,   // Display width of the text (accounting for wide characters, etc.)
     cursor_char_pos: usize, // Cursor position in terms of characters
-    cursor_byte_pos: usize,
+    cursor_byte_pos: usize, // Cursor position in terms of bytes
 }
 
 // Struct representing user input with snapshot capability and input
@@ -22,8 +22,7 @@ struct InputState {
 pub struct TerminalInput {
     state: InputState,                                   // Current input state
     snapshot: Option<InputState>,                        // Snapshot of previous state
-    history: InputHistory<InputState, MAX_HISTORY_SIZE>, /* Records the history of inputs made
-                                                          * by the user */
+    history: InputHistory<InputState, MAX_HISTORY_SIZE>, // Records the history of inputs made by the user
 }
 
 impl Display for TerminalInput {
@@ -189,11 +188,10 @@ impl TerminalInput {
             self.state.char_count = total_char_count;
             self.state.display_width = unicode::display_width(&self.text());
 
-            self.state.cursor_char_pos = word_start;
-            self.calc_new_cursor_byte_pos();
+            // Update cursor position
+            self.state.cursor_byte_pos = word_start;
+            self.calc_new_cursor_char_pos();
         }
-
-        // Update cursor position
     }
 
     // Remove everything after cursor position
@@ -252,12 +250,14 @@ impl TerminalInput {
         self.snapshot = None;
     }
 
+    // Calculate the new byte cursor position based on the current character position
     fn calc_new_cursor_byte_pos(&mut self) {
         let graphemes: Vec<&str> = self.state.text.graphemes(true).collect();
         let new_cursor_byte_pos = char_to_byte_pos(&graphemes, self.state.cursor_char_pos);
         self.state.cursor_byte_pos = new_cursor_byte_pos;
     }
 
+    // Calculate the new character cursor position based on the current byte position
     fn calc_new_cursor_char_pos(&mut self) {
         let graphemes: Vec<&str> = self.state.text.graphemes(true).collect();
         let new_cursor_char_pos = byte_to_char_pos(&graphemes, self.state.cursor_byte_pos);
@@ -265,10 +265,12 @@ impl TerminalInput {
     }
 }
 
+// Utility to convert cursor char position to byte position
 fn char_to_byte_pos(graphemes: &Vec<&str>, char_pos: usize) -> usize {
     graphemes.iter().take(char_pos).map(|g| g.len()).sum()
 }
 
+// Utility to convert cursor byte position to char position
 fn byte_to_char_pos(graphemes: &Vec<&str>, byte_pos: usize) -> usize {
     let mut byte_count = 0;
     let mut cursor_pos = 0;
@@ -287,5 +289,200 @@ fn byte_to_char_pos(graphemes: &Vec<&str>, byte_pos: usize) -> usize {
         cursor_pos
     } else {
         graphemes.len()
+    }
+}
+
+#[cfg(test)]
+mod should {
+    use super::*;
+
+    #[test]
+    fn have_initial_state() {
+        let input = TerminalInput::default();
+        assert_eq!(input.text(), "");
+        assert_eq!(input.cursor_char_pos(), 0);
+        assert_eq!(input.cursor_byte_pos(), 0);
+        assert_eq!(input.char_count(), 0);
+        assert_eq!(input.display_width(), 0);
+    }
+
+    #[test]
+    fn insert_text_before_cursor() {
+        let mut input = TerminalInput::default();
+        let test_str = "hello 你好 🌍 👨‍👩‍👧‍👦";
+        input.insert_before_cursor(test_str.as_bytes());
+        assert_eq!(input.text(), test_str);
+        assert_eq!(input.cursor_char_pos(), 12); // "hello 你好 🌍 👨‍👩‍👧‍👦" has 12 graphemes
+        assert_eq!(input.cursor_byte_pos(), test_str.len());
+        assert_eq!(input.char_count(), 12);
+        assert_eq!(input.display_width(), 16); // display width of text
+    }
+
+    #[test]
+    fn clear_input() {
+        let mut input = TerminalInput::default();
+        let test_str = "hello 你好 🌍 👨‍👩‍👧‍👦";
+        input.insert_before_cursor(test_str.as_bytes());
+        input.clear();
+        assert_eq!(input.text(), "");
+        assert_eq!(input.cursor_char_pos(), 0);
+        assert_eq!(input.cursor_byte_pos(), 0);
+        assert_eq!(input.char_count(), 0);
+        assert_eq!(input.display_width(), 0);
+    }
+
+    #[test]
+    fn move_cursor_next() {
+        let mut input = TerminalInput::default();
+        let test_str = "hello 你好 🌍 👨‍👩‍👧‍👦";
+        input.insert_before_cursor(test_str.as_bytes());
+        input.move_cursor_start();
+        input.move_cursor_next();
+        assert_eq!(input.cursor_char_pos(), 1);
+        assert_eq!(input.cursor_byte_pos(), 1);
+    }
+
+    #[test]
+    fn move_cursor_prev() {
+        let mut input = TerminalInput::default();
+        let test_str = "hello 你好 🌍 👨‍👩‍👧‍👦";
+        input.insert_before_cursor(test_str.as_bytes());
+        input.move_cursor_end();
+        input.move_cursor_prev();
+        assert_eq!(input.cursor_char_pos(), 11);
+        assert_eq!(input.cursor_byte_pos(), 18);
+    }
+
+    #[test]
+    fn move_cursor_to_start() {
+        let mut input = TerminalInput::default();
+        let test_str = "hello 你好 🌍 👨‍👩‍👧‍👦";
+        input.insert_before_cursor(test_str.as_bytes());
+        input.move_cursor_start();
+        assert_eq!(input.cursor_char_pos(), 0);
+        assert_eq!(input.cursor_byte_pos(), 0);
+    }
+
+    #[test]
+    fn move_cursor_to_end() {
+        let mut input = TerminalInput::default();
+        let test_str = "hello 你好 🌍 👨‍👩‍👧‍👦";
+        input.insert_before_cursor(test_str.as_bytes());
+        input.move_cursor_start();
+        input.move_cursor_end();
+        assert_eq!(input.cursor_char_pos(), 12);
+        assert_eq!(input.cursor_byte_pos(), test_str.len());
+    }
+
+    #[test]
+    fn move_cursor_to_given_position() {
+        let mut input = TerminalInput::default();
+        let test_str = "hello 你好 🌍 👨‍👩‍👧‍👦";
+        input.insert_before_cursor(test_str.as_bytes());
+        input.move_cursor_to(7); // Position after "hello 你"
+        assert_eq!(input.cursor_byte_pos(), 7);
+        assert_eq!(input.cursor_char_pos(), 6);
+    }
+
+    #[test]
+    fn remove_character_before_cursor() {
+        let mut input = TerminalInput::default();
+        let test_str = "hello world";
+        input.insert_before_cursor(test_str.as_bytes());
+        input.move_cursor_end();
+        input.remove_before_cursor();
+        let expected_str = "hello worl";
+        assert_eq!(input.text(), expected_str);
+        assert_eq!(input.cursor_char_pos(), 10);
+        assert_eq!(input.cursor_byte_pos(), 10);
+        assert_eq!(input.char_count(), 10);
+        assert_eq!(input.display_width(), 10);
+    }
+
+    #[test]
+    fn remove_emoji_before_cursor() {
+        let mut input = TerminalInput::default();
+        let test_str = "hello 你好 🌍 👨‍👩‍👧‍👦";
+        input.insert_before_cursor(test_str.as_bytes());
+        input.move_cursor_end();
+        input.remove_before_cursor();
+        let expected_str = "hello 你好 🌍 ";
+        assert_eq!(input.text(), expected_str);
+        assert_eq!(input.cursor_char_pos(), 11);
+        assert_eq!(input.cursor_byte_pos(), 18);
+        assert_eq!(input.char_count(), 11);
+        assert_eq!(input.display_width(), 14);
+    }
+
+    #[test]
+    fn remove_last_word_before_cursor() {
+        let mut input = TerminalInput::default();
+        let test_str = "hello 你好 🌍 wor👨‍👨‍👧‍👧ld";
+        input.insert_before_cursor(test_str.as_bytes());
+        input.move_cursor_end();
+        input.remove_last_word_before_cursor();
+        let expected_str = "hello 你好 🌍 ";
+        assert_eq!(input.text(), expected_str);
+        assert_eq!(input.cursor_char_pos(), 11);
+        assert_eq!(input.cursor_byte_pos(), 18);
+        assert_eq!(input.char_count(), 11);
+        assert_eq!(input.display_width(), 14);
+    }
+
+    #[test]
+    fn remove_everything_after_cursor() {
+        let mut input = TerminalInput::default();
+        let test_str = "hello 你好 🌍 👨‍👩‍👧‍👦";
+        input.insert_before_cursor(test_str.as_bytes());
+        input.move_cursor_to(5);
+        input.remove_after_cursor();
+        let expected_str = "hello";
+        assert_eq!(input.text(), expected_str);
+        assert_eq!(input.cursor_char_pos(), 5);
+        assert_eq!(input.cursor_byte_pos(), 5);
+        assert_eq!(input.char_count(), 5);
+        assert_eq!(input.display_width(), 5);
+    }
+
+    #[test]
+    fn push_to_history() {
+        let mut input = TerminalInput::default();
+        input.insert_before_cursor("hello".as_bytes());
+        input.push_to_history();
+        assert_eq!(input.history.prev().unwrap().text, "hello");
+    }
+
+    #[test]
+    fn set_history_prev() {
+        let mut input = TerminalInput::default();
+        input.insert_before_cursor("1st pushed text".as_bytes());
+        input.push_to_history();
+        input.insert_before_cursor("2nd pushed text".as_bytes());
+        input.set_history_prev();
+        assert_eq!(input.text(), "1st pushed text");
+    }
+
+    #[test]
+    fn set_history_next() {
+        let mut input = TerminalInput::default();
+        input.insert_before_cursor("1st pushed text".as_bytes());
+        input.push_to_history();
+        input.clear();
+        input.insert_before_cursor("2nd pushed text".as_bytes());
+        input.push_to_history();
+        input.clear();
+        input.insert_before_cursor("not pushed text".as_bytes());
+        input.set_history_prev();
+        input.set_history_prev();
+
+        assert_eq!(input.text(), "1st pushed text");
+        input.set_history_next();
+        assert_eq!(input.text(), "2nd pushed text");
+        input.set_history_next();
+        assert_eq!(
+            input.text(),
+            "not pushed text",
+            "Should restore from snapshot"
+        );
     }
 }
