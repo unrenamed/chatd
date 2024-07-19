@@ -247,3 +247,219 @@ where
             .sum::<u16>()
     }
 }
+
+#[cfg(test)]
+mod should {
+    use super::*;
+    use mockall::mock;
+
+    mock! {
+        pub Handle {}
+
+        impl Write for Handle {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize>;
+            fn flush(&mut self) -> std::io::Result<()>;
+        }
+
+        impl Clone for Handle {
+            fn clone(&self) -> Self;
+        }
+
+        impl CloseHandle for Handle {
+            fn close(&mut self) {}
+        }
+    }
+
+    #[derive(Clone, Default)]
+    pub struct TestHandle {
+        pub mock: MockHandle,
+        pub written: Vec<u8>,
+    }
+
+    impl Write for TestHandle {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.written.extend_from_slice(buf);
+            self.mock.write(buf)
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            self.mock.flush()
+        }
+    }
+
+    impl CloseHandle for TestHandle {
+        fn close(&mut self) {
+            self.mock.close()
+        }
+    }
+
+    #[test]
+    fn set_prompt() {
+        let mut terminal = Terminal::new(TestHandle::default());
+        terminal.set_prompt("user");
+        assert_eq!(terminal.prompt, "[user] ");
+        assert_eq!(terminal.prompt_display_width, 7);
+    }
+
+    #[test]
+    fn refresh_cursor_coordinates_on_resize() {
+        let mut terminal = Terminal::new(TestHandle::default());
+        terminal.set_size(80, 24);
+        terminal.set_prompt("user");
+        let long_input = "a".repeat(240); // takes at least 3 rows
+        terminal.input.insert_before_cursor(long_input.as_bytes());
+        terminal.input.move_cursor_to(120);
+
+        terminal
+            .handle()
+            .mock
+            .expect_write()
+            .returning(|buf| Ok(buf.len()));
+
+        terminal
+            .handle()
+            .mock
+            .expect_flush()
+            .times(1)
+            .returning(|| Ok(()));
+
+        terminal.print_input_line().unwrap();
+
+        // Assert state before resize
+        assert_eq!(terminal.term_width, 80);
+        assert_eq!(terminal.cursor_x, 47);
+        assert_eq!(terminal.cursor_y, 1, "Cursor must be on the 2nd row");
+        assert_eq!(terminal.input_end_x, 7);
+        assert_eq!(terminal.input_end_y, 3, "Input must end on the 4th row");
+
+        terminal.set_size(40, 24); // reduce term width by half
+
+        // Assert state after 1st resize
+        assert_eq!(terminal.term_width, 40);
+        assert_eq!(terminal.cursor_x, 7);
+        assert_eq!(
+            terminal.cursor_y, 3,
+            "Cursor must slide down to the 4th row"
+        );
+        assert_eq!(terminal.input_end_x, 7);
+        assert_eq!(
+            terminal.input_end_y, 6,
+            "Input end must slide down to the 7th row"
+        );
+
+        terminal.set_size(120, 24); // tripple the term width
+
+        // Assert state after 2nd resize
+        assert_eq!(terminal.term_width, 120);
+        assert_eq!(terminal.cursor_x, 7);
+        assert_eq!(terminal.cursor_y, 1, "Cursor must slide up to the 2nd row");
+        assert_eq!(terminal.input_end_x, 7);
+        assert_eq!(
+            terminal.input_end_y, 2,
+            "Input end must slide up to the 3rd row"
+        );
+    }
+
+    #[test]
+    fn close_handle_on_exit() {
+        let mut terminal = Terminal::new(TestHandle::default());
+
+        terminal
+            .handle()
+            .mock
+            .expect_close()
+            .times(1)
+            .returning(|| ());
+
+        terminal.exit();
+    }
+
+    #[test]
+    fn clear_input() {
+        let mut terminal = Terminal::new(TestHandle::default());
+        terminal.input.insert_before_cursor(b"some input");
+
+        terminal
+            .handle()
+            .mock
+            .expect_write()
+            .times(..)
+            .returning(|buf| Ok(buf.len()));
+
+        terminal
+            .handle()
+            .mock
+            .expect_flush()
+            .times(1)
+            .returning(|| Ok(()));
+
+        terminal.clear_input().unwrap();
+        assert_eq!(terminal.input.text(), "");
+    }
+
+    #[test]
+    fn print_input_line() {
+        let mut terminal = Terminal::new(TestHandle::default());
+        terminal.set_size(240, 24);
+        terminal.set_prompt("user");
+        let long_input = "a".repeat(240); // takes 2 rows
+        terminal.input.insert_before_cursor(long_input.as_bytes());
+        terminal.set_size(120, 24);
+
+        terminal
+            .handle
+            .mock
+            .expect_write()
+            .returning(|buf| Ok(buf.len()));
+
+        terminal.handle.mock.expect_flush().returning(|| Ok(()));
+
+        terminal.print_input_line().unwrap();
+
+        let mut expected_output = String::new();
+        expected_output.push_str("\x1B[1G"); // moves the cursor to the beginning of the current line
+        expected_output.push_str("\x1B[2K"); // clears the current line
+        expected_output.push_str("\x1B[1A"); // moves the cursor 1 row up
+        expected_output.push_str("\x1B[2K"); // clears the current line
+        expected_output.push_str("\x1B[1A"); // moves the cursor 1 row up
+        expected_output.push_str("\x1B[2K"); // clears the current line
+        expected_output.push_str("[user] "); // prints prompt
+        expected_output.push_str(&long_input); // prints input
+        let written = String::from_utf8(terminal.handle().written.clone()).unwrap();
+        assert_eq!(written, expected_output);
+    }
+
+    #[test]
+    fn print_message_and_then_input_line() {
+        let mut terminal = Terminal::new(TestHandle::default());
+        terminal.set_size(240, 24);
+        terminal.set_prompt("user");
+        let long_input = "a".repeat(240); // takes 2 rows
+        terminal.input.insert_before_cursor(long_input.as_bytes());
+        terminal.set_size(120, 24);
+
+        terminal
+            .handle
+            .mock
+            .expect_write()
+            .returning(|buf| Ok(buf.len()));
+
+        terminal.handle.mock.expect_flush().returning(|| Ok(()));
+
+        terminal.print_message("[bob] hello @user").unwrap();
+
+        let mut expected_output = String::new();
+        expected_output.push_str("\x1B[1G"); // moves the cursor to the beginning of the current line
+        expected_output.push_str("\x1B[2K"); // clears the current line
+        expected_output.push_str("\x1B[1A"); // moves the cursor 1 row up
+        expected_output.push_str("\x1B[2K"); // clears the current line
+        expected_output.push_str("\x1B[1A"); // moves the cursor 1 row up
+        expected_output.push_str("\x1B[2K"); // clears the current line
+        expected_output.push_str("[bob] hello @user"); // prints message
+        expected_output.push_str("\n\r"); // prints newline
+        expected_output.push_str("[user] "); // prints prompt
+        expected_output.push_str(&long_input); // prints input
+        let written = String::from_utf8(terminal.handle().written.clone()).unwrap();
+        assert_eq!(written, expected_output);
+    }
+}
