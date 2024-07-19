@@ -42,3 +42,35 @@ impl From<&User> for Author {
         }
     }
 }
+
+#[cfg(test)]
+mod should {
+    use super::*;
+    use crate::chat::{User, UserName};
+
+    #[test]
+    fn convert_user_to_author() {
+        let mut user = User::default();
+        user.id = 2;
+        user.username = UserName::from("alice");
+        user.is_muted = true;
+
+        let author: Author = user.into();
+        assert_eq!(author.id(), 2);
+        assert_eq!(author.username(), &UserName::from("alice"));
+        assert!(author.is_muted());
+    }
+
+    #[test]
+    fn convert_user_ref_to_author() {
+        let mut user = User::default();
+        user.id = 2;
+        user.username = UserName::from("alice");
+        user.is_muted = true;
+
+        let author: Author = (&user).into();
+        assert_eq!(author.id(), 2);
+        assert_eq!(author.username(), &UserName::from("alice"));
+        assert!(author.is_muted());
+    }
+}
