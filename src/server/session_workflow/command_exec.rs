@@ -48,7 +48,7 @@ where
             None => return Ok(()),
         };
         let user = context.user.clone();
-        let username = &user.username;
+        let username = &user.username();
 
         match command {
             Command::Exit => {
@@ -70,7 +70,7 @@ where
                 if let UserStatus::Away {
                     reason: _,
                     since: _,
-                } = &member.user.status
+                } = &member.user.status()
                 {
                     member.user.return_active();
                     let message =
@@ -84,7 +84,7 @@ where
                 let new_name = sanitize::name(&new_name);
                 let new_username = UserName::from(&new_name);
 
-                if user.username == new_username {
+                if user.username() == &new_username {
                     let message = message::Error::new(
                         user.into(),
                         "new name is the same as the original".to_string(),
@@ -108,12 +108,12 @@ where
                 );
                 room.send_message(message.into()).await?;
 
-                let old_name = user.username;
-                let user_id = user.id;
+                let old_name = user.username();
+                let user_id = user.id();
 
                 let member = room.find_member_mut(username);
                 member.user.set_username(new_username.clone());
-                terminal.set_prompt(&member.user.config.display_name());
+                terminal.set_prompt(&member.user.config().display_name());
 
                 let member = member.clone();
                 room.add_member(new_username.clone(), member);
@@ -131,17 +131,17 @@ where
                         room.send_message(message.into()).await?;
                         break 'label;
                     }
-                    Some(to) if from.id.eq(&to.id) => {
+                    Some(to) if from.id().eq(&to.id()) => {
                         let message =
                             message::Error::new(from.into(), format!("you can't message yourself"));
                         room.send_message(message.into()).await?;
                         break 'label;
                     }
                     Some(to) => {
-                        let status = to.status.clone();
-                        let name = to.username.clone();
+                        let status = to.status().clone();
+                        let name = to.username().clone();
 
-                        to.set_reply_to(from.id);
+                        to.set_reply_to(from.id());
 
                         let message = message::Private::new(
                             from.clone().into(),
@@ -170,14 +170,14 @@ where
                 let member = room.find_member(username);
                 let from = member.user.clone();
 
-                if from.reply_to.is_none() {
+                if from.reply_to().is_none() {
                     let message =
                         message::Error::new(from.into(), "no message to reply to".to_string());
                     room.send_message(message.into()).await?;
                     break 'label;
                 }
 
-                let target_id = &from.reply_to.unwrap();
+                let target_id = &from.reply_to().unwrap();
                 let target_name = room.try_get_name(&target_id);
                 if target_name.is_none() {
                     let message =
@@ -201,7 +201,7 @@ where
 
                 let colorized_names = usernames
                     .iter()
-                    .map(|u| user.config.theme().style_username(u).to_string())
+                    .map(|u| user.config().theme().style_username(u).to_string())
                     .collect::<Vec<String>>();
 
                 let body = format!(
@@ -247,7 +247,7 @@ where
                 let message = if let Some(t) = target {
                     message::Emote::new(
                         user.into(),
-                        format!("hits {} with a squishy banana.", t.username),
+                        format!("hits {} with a squishy banana.", t.username()),
                     )
                     .into()
                 } else {
@@ -284,7 +284,7 @@ where
                 let mut help = format!("Available commands: {}", utils::NEWLINE);
                 help.push_str(&format_commands(&VISIBLE_NOOP_CHAT_COMMANDS));
 
-                if auth.is_op(&user.public_key.clone().into()) {
+                if auth.is_op(&user.public_key().clone().into()) {
                     help.push_str(&format!(
                         "{}{}Operator commands: {}{}",
                         utils::NEWLINE,
@@ -299,10 +299,10 @@ where
             }
             Command::Quiet => {
                 let member = room.find_member_mut(username);
-                member.user.config.switch_quiet_mode();
+                member.user.config_mut().switch_quiet_mode();
                 let message = message::System::new(
                     member.user.clone().into(),
-                    match member.user.config.quiet() {
+                    match member.user.config().quiet() {
                         true => "Quiet mode is toggled ON",
                         false => "Quiet mode is toggled OFF",
                     }
@@ -312,10 +312,10 @@ where
             }
             Command::Timestamp(mode) => {
                 let member = room.find_member_mut(username);
-                member.user.config.set_timestamp_mode(*mode);
+                member.user.config_mut().set_timestamp_mode(*mode);
                 let message = message::System::new(
                     member.user.clone().into(),
-                    match member.user.config.timestamp_mode() {
+                    match member.user.config().timestamp_mode() {
                         TimestampMode::Time | TimestampMode::DateTime => {
                             "Timestamp is toggled ON, timezone is UTC"
                         }
@@ -329,7 +329,7 @@ where
                 let member = room.find_member_mut(username);
                 let message = message::System::new(user.into(), format!("Set theme: {}", theme));
                 member.user.set_theme((*theme).into());
-                terminal.set_prompt(&member.user.config.display_name());
+                terminal.set_prompt(&member.user.config().display_name());
                 room.send_message(message.into()).await?;
             }
             Command::Themes => {
@@ -347,10 +347,10 @@ where
 
                 if target.is_none() {
                     let ignored_usernames: Vec<String> = user
-                        .ignored
+                        .ignored()
                         .iter()
                         .filter_map(|id| room.try_get_name(id))
-                        .map(|name| user.config.theme().style_username(name).to_string())
+                        .map(|name| user.config().theme().style_username(name).to_string())
                         .collect();
 
                     let message_text = match ignored_usernames.is_empty() {
@@ -370,9 +370,9 @@ where
                 let target_username = UserName::from(target.as_deref().unwrap());
                 match room
                     .try_find_member(&target_username)
-                    .map(|a| a.user.id.clone())
+                    .map(|a| a.user.id().clone())
                 {
-                    Some(target_id) if target_id == user.id => {
+                    Some(target_id) if target_id == user.id() => {
                         let message = message::Error::new(
                             user.into(),
                             "you can't ignore yourself".to_string(),
@@ -380,7 +380,7 @@ where
                         room.send_message(message.into()).await?;
                         break 'label;
                     }
-                    Some(target_id) if user.ignored.contains(&target_id) => {
+                    Some(target_id) if user.ignored().contains(&target_id) => {
                         let message = message::System::new(
                             user.into(),
                             format!("user already in the ignored list"),
@@ -395,10 +395,7 @@ where
                         break 'label;
                     }
                     Some(target_id) => {
-                        room.find_member_mut(username)
-                            .user
-                            .ignored
-                            .insert(target_id);
+                        room.find_member_mut(username).user.ignore(target_id);
                         let message = message::System::new(
                             user.into(),
                             format!("Ignoring: {}", target_username),
@@ -414,7 +411,7 @@ where
                 let target_username = UserName::from(target_username);
                 match room
                     .try_find_member(&target_username)
-                    .map(|a| a.user.id.clone())
+                    .map(|a| a.user.id().clone())
                 {
                     None => {
                         let message =
@@ -422,7 +419,7 @@ where
                         room.send_message(message.into()).await?;
                         break 'label;
                     }
-                    Some(target_id) if !user.ignored.contains(&target_id) => {
+                    Some(target_id) if !user.ignored().contains(&target_id) => {
                         let message = message::Error::new(
                             user.into(),
                             "user not in the ignored list yet".to_string(),
@@ -431,10 +428,7 @@ where
                         break 'label;
                     }
                     Some(target_id) => {
-                        room.find_member_mut(username)
-                            .user
-                            .ignored
-                            .remove(&target_id);
+                        room.find_member_mut(username).user.unignore(&target_id);
                         let message = message::System::new(
                             user.into(),
                             format!("No longer ignoring: {}", target_username),
@@ -449,10 +443,10 @@ where
 
                 if target.is_none() {
                     let focused_usernames: Vec<String> = user
-                        .focused
+                        .focused()
                         .iter()
                         .filter_map(|id| room.try_get_name(id))
-                        .map(|name| user.config.theme().style_username(name).to_string())
+                        .map(|name| user.config().theme().style_username(name).to_string())
                         .collect();
 
                     let message_text = match focused_usernames.is_empty() {
@@ -471,7 +465,7 @@ where
 
                 let target = target.as_deref().unwrap();
                 if target == "$" {
-                    room.find_member_mut(username).user.focused.clear();
+                    room.find_member_mut(username).user.unfocus_all();
                     let message = message::System::new(
                         user.into(),
                         "Removed focus from all users".to_string(),
@@ -485,17 +479,13 @@ where
                     let target_username = UserName::from(target_username);
                     match room
                         .try_find_member(&target_username)
-                        .map(|a| a.user.id.clone())
+                        .map(|a| a.user.id().clone())
                     {
                         None => continue,
-                        Some(target_id) if target_id == user.id => continue,
-                        Some(target_id) if user.focused.contains(&target_id) => continue,
+                        Some(target_id) if target_id == user.id() => continue,
+                        Some(target_id) if user.focused().contains(&target_id) => continue,
                         Some(target_id) => {
-                            room.find_member_mut(username)
-                                .user
-                                .focused
-                                .insert(target_id);
-
+                            room.find_member_mut(username).user.focus(target_id);
                             focused.push(target_username);
                         }
                     }
@@ -503,7 +493,7 @@ where
 
                 let focused_usernames: Vec<String> = focused
                     .iter()
-                    .map(|name| user.config.theme().style_username(name).to_string())
+                    .map(|name| user.config().theme().style_username(name).to_string())
                     .collect();
 
                 let message_text = match focused_usernames.is_empty() {
@@ -528,7 +518,7 @@ where
                 room.send_message(message.into()).await?;
             }
             Command::Mute(target_username) => 'label: {
-                if !auth.is_op(&user.public_key.clone().into()) {
+                if !auth.is_op(&user.public_key().clone().into()) {
                     let message =
                         message::Error::new(user.into(), "must be an operator".to_string());
                     room.send_message(message.into()).await?;
@@ -546,7 +536,7 @@ where
                         room.send_message(message.into()).await?;
                         break 'label;
                     }
-                    Some(target) if target.id == user.id => {
+                    Some(target) if target.id() == user.id() => {
                         let message =
                             message::Error::new(user.into(), "you can't mute yourself".to_string());
                         room.send_message(message.into()).await?;
@@ -559,12 +549,12 @@ where
                             user.into(),
                             format!(
                                 "{}: {}, id = {}",
-                                match target.is_muted {
+                                match target.is_muted() {
                                     true => "Muted",
                                     false => "Unmuted",
                                 },
-                                target.username,
-                                target.id
+                                target.username(),
+                                target.id()
                             ),
                         );
                         room.send_message(message.into()).await?;
@@ -578,7 +568,7 @@ where
                     break 'label;
                 }
 
-                if !auth.is_op(&user.public_key.clone().into()) {
+                if !auth.is_op(&user.public_key().clone().into()) {
                     let message = message::Error::new(
                         user.into(),
                         "must be an operator to modify the MOTD".to_string(),
@@ -600,7 +590,7 @@ where
                 room.send_message(message.into()).await?;
             }
             Command::Kick(target_username) => 'label: {
-                if !auth.is_op(&user.public_key.clone().into()) {
+                if !auth.is_op(&user.public_key().clone().into()) {
                     let message =
                         message::Error::new(user.into(), "must be an operator".to_string());
                     room.send_message(message.into()).await?;
@@ -626,7 +616,7 @@ where
                 }
             }
             Command::Ban(query) => 'label: {
-                if !auth.is_op(&user.public_key.clone().into()) {
+                if !auth.is_op(&user.public_key().clone().into()) {
                     let message =
                         message::Error::new(user.into(), "must be an operator".to_string());
                     room.send_message(message.into()).await?;
@@ -648,12 +638,12 @@ where
                         match room.try_find_member(&target_username) {
                             Some(member) => {
                                 auth.ban_fingerprint(
-                                    &member.user.public_key.fingerprint(),
+                                    &member.user.public_key().fingerprint(),
                                     duration,
                                 );
                                 let message = message::Announce::new(
                                     user.clone().into(),
-                                    format!("banned {} from the server", member.user.username),
+                                    format!("banned {} from the server", member.user.username()),
                                 );
                                 member.exit()?;
                                 messages.push(message.into());
@@ -674,7 +664,7 @@ where
                                     auth.ban_username(&username, item.duration);
 
                                     for (_, member) in room.members_iter_mut() {
-                                        if member.user.username.eq(&username) {
+                                        if member.user.username().eq(&username) {
                                             let message = message::Announce::new(
                                                 user.clone().into(),
                                                 format!("banned {} from the server", username),
@@ -688,12 +678,12 @@ where
                                     auth.ban_fingerprint(&fingerprint, item.duration);
 
                                     for (_, member) in room.members_iter_mut() {
-                                        if member.user.public_key.fingerprint().eq(&fingerprint) {
+                                        if member.user.public_key().fingerprint().eq(&fingerprint) {
                                             let message = message::Announce::new(
                                                 user.clone().into(),
                                                 format!(
                                                     "banned {} from the server",
-                                                    member.user.username
+                                                    member.user.username()
                                                 ),
                                             );
                                             messages.push(message.into());
@@ -720,7 +710,7 @@ where
             Command::Banned => 'label: {
                 use std::fmt::Write;
 
-                if !auth.is_op(&user.public_key.clone().into()) {
+                if !auth.is_op(&user.public_key().clone().into()) {
                     let message =
                         message::Error::new(user.into(), "must be an operator".to_string());
                     room.send_message(message.into()).await?;
@@ -745,7 +735,7 @@ where
                 room.send_message(message.into()).await?;
             }
             Command::Whitelist(command) => 'label: {
-                if !auth.is_op(&user.public_key.clone().into()) {
+                if !auth.is_op(&user.public_key().clone().into()) {
                     let message =
                         message::Error::new(user.into(), "must be an operator".to_string());
                     room.send_message(message.into()).await?;
@@ -755,7 +745,7 @@ where
                 exec_whitelist_command(command, &user, room, auth).await?;
             }
             Command::Oplist(command) => 'label: {
-                if !auth.is_op(&user.public_key.clone().into()) {
+                if !auth.is_op(&user.public_key().clone().into()) {
                     let message =
                         message::Error::new(user.into(), "must be an operator".to_string());
                     room.send_message(message.into()).await?;
@@ -819,7 +809,7 @@ async fn exec_whitelist_command(
                     let user = user_or_key;
                     let username = UserName::from(user);
                     match room.try_find_member(&username).map(|m| &m.user) {
-                        Some(user) => auth.add_trusted_key(user.public_key.clone().into()),
+                        Some(user) => auth.add_trusted_key(user.public_key().clone().into()),
                         None => invalid_users.push(user.to_string()),
                     }
                 }
@@ -861,7 +851,7 @@ async fn exec_whitelist_command(
                     let user = user_or_key;
                     let username = UserName::from(user);
                     match room.try_find_member(&username).map(|m| &m.user) {
-                        Some(user) => auth.remove_trusted_key(user.public_key.clone()),
+                        Some(user) => auth.remove_trusted_key(user.public_key().clone()),
                         None => invalid_users.push(user.to_string()),
                     }
                 }
@@ -923,7 +913,7 @@ async fn exec_whitelist_command(
             let auth = auth;
             let mut kicked = vec![];
             for (_, member) in room.members_iter() {
-                if !auth.is_trusted(&member.user.public_key) {
+                if !auth.is_trusted(&member.user.public_key()) {
                     kicked.push(member.user.clone());
                     member.exit()?;
                 }
@@ -956,9 +946,9 @@ async fn exec_whitelist_command(
                 if let Some(user) = room
                     .members_iter()
                     .map(|(_, m)| &m.user)
-                    .find(|u| u.public_key == *key)
+                    .find(|u| u.public_key() == key)
                 {
-                    trusted_online_users.push(user.username.clone().into());
+                    trusted_online_users.push(user.username().clone().into());
                 } else {
                     trusted_keys.push(key.fingerprint());
                 }
@@ -1019,7 +1009,7 @@ async fn exec_oplist_command(
                     let user = user_or_key;
                     let username = UserName::from(user);
                     match room.try_find_member(&username).map(|m| &m.user) {
-                        Some(user) => auth.add_operator(user.public_key.clone()),
+                        Some(user) => auth.add_operator(user.public_key().clone()),
                         None => invalid_users.push(user.to_string()),
                     }
                 }
@@ -1062,7 +1052,7 @@ async fn exec_oplist_command(
                     let user = user_or_key;
                     let username = UserName::from(user);
                     match room.try_find_member(&username).map(|m| &m.user) {
-                        Some(user) => auth.remove_operator(user.public_key.clone()),
+                        Some(user) => auth.remove_operator(user.public_key().clone()),
                         None => invalid_users.push(user.to_string()),
                     }
                 }
@@ -1121,9 +1111,9 @@ async fn exec_oplist_command(
                 if let Some(user) = room
                     .members_iter()
                     .map(|(_, m)| &m.user)
-                    .find(|u| u.public_key == *key)
+                    .find(|u| u.public_key() == key)
                 {
-                    online_operators.push(user.username.clone().into());
+                    online_operators.push(user.username().clone().into());
                 } else {
                     offline_keys.push(key.fingerprint());
                 }

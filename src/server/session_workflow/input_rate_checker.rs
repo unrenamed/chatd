@@ -42,11 +42,11 @@ where
     ) -> anyhow::Result<()> {
         let no_ratelim_error_msg = format!(
             "User {} should have its own rate-limit in the server room",
-            context.user.username
+            context.user.username()
         );
 
         let rl = room
-            .get_ratelimit(context.user.id)
+            .get_ratelimit(context.user.id())
             .expect(no_ratelim_error_msg.as_str());
 
         if let Err(remaining) = ratelimit::check(rl) {

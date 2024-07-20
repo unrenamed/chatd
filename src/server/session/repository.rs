@@ -79,7 +79,7 @@ impl SessionRepository {
                                 .join(id, username, pk, ssh_id, message_tx, exit_tx)
                                 .await;
                             if let Ok(user) = join_result {
-                                terminal.set_prompt(&user.config.display_name());
+                                terminal.set_prompt(&user.config().display_name());
                             }
                         }
                         Self::handle_session(

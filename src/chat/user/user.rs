@@ -12,21 +12,21 @@ use super::{UserName, UserTheme};
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct User {
-    pub id: usize,
-    pub username: UserName,
-    pub config: UserConfig,
-    pub status: UserStatus,
+    id: usize,
+    username: UserName,
+    config: UserConfig,
+    status: UserStatus,
 
-    pub public_key: PubKey,
+    public_key: PubKey,
 
-    pub reply_to: Option<usize>,
-    pub is_muted: bool,
+    reply_to: Option<usize>,
+    is_muted: bool,
 
-    pub ignored: BTreeSet<usize>,
-    pub focused: BTreeSet<usize>,
+    ignored: BTreeSet<usize>,
+    focused: BTreeSet<usize>,
 
-    pub joined_at: DateTime<Utc>,
-    pub ssh_client: String,
+    joined_at: DateTime<Utc>,
+    ssh_client: String,
 }
 
 impl User {
@@ -73,6 +73,66 @@ impl User {
         let now = Utc::now();
         let secs = now.signed_duration_since(self.joined_at).num_seconds() as u64;
         Duration::from_secs(secs)
+    }
+
+    pub fn id(&self) -> usize {
+        self.id
+    }
+
+    pub fn username(&self) -> &UserName {
+        &self.username
+    }
+
+    pub fn is_muted(&self) -> bool {
+        self.is_muted
+    }
+
+    pub fn config(&self) -> &UserConfig {
+        &self.config
+    }
+
+    pub fn config_mut(&mut self) -> &mut UserConfig {
+        &mut self.config
+    }
+
+    pub fn status(&self) -> &UserStatus {
+        &self.status
+    }
+
+    pub fn reply_to(&self) -> &Option<usize> {
+        &self.reply_to
+    }
+
+    pub fn public_key(&self) -> &PubKey {
+        &self.public_key
+    }
+
+    pub fn ignored(&self) -> &BTreeSet<usize> {
+        &self.ignored
+    }
+
+    pub fn focused(&self) -> &BTreeSet<usize> {
+        &self.focused
+    }
+
+    pub fn unignore(&mut self, id: &usize) {
+        self.ignored.remove(id);
+    }
+
+    pub fn unfocus(&mut self, id: &usize) {
+        self.focused.remove(id);
+    }
+
+    pub fn ignore(&mut self, id: usize) {
+        self.ignored.insert(id);
+    }
+
+    pub fn focus(&mut self, id: usize) {
+        self.focused.insert(id);
+    }
+
+    pub fn unfocus_all(&mut self) {
+        self.focused.clear();
     }
 
     pub fn set_reply_to(&mut self, reply_to: usize) {

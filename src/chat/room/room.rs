@@ -155,8 +155,8 @@ impl ChatRoom {
         self.ratelims.remove(user_id);
 
         for (_, member) in &mut self.members {
-            member.user.ignored.remove(user_id);
-            member.user.focused.remove(user_id);
+            member.user.unignore(user_id);
+            member.user.unfocus(user_id);
         }
 
         Ok(())
@@ -179,17 +179,17 @@ impl ChatRoom {
             Message::Public(ref m) => {
                 self.history.push(msg.clone());
                 for (_, member) in self.members.iter() {
-                    if m.from().is_muted() && member.user.id == m.from().id() {
+                    if m.from().is_muted() && member.user.id() == m.from().id() {
                         member.send_user_is_muted_message().await?;
                     }
                     if m.from().is_muted() {
                         continue;
                     }
-                    if member.user.ignored.contains(&m.from().id()) {
+                    if member.user.ignored().contains(&m.from().id()) {
                         continue;
                     }
-                    if !member.user.focused.is_empty()
-                        && !member.user.focused.contains(&m.from().id())
+                    if !member.user.focused().is_empty()
+                        && !member.user.focused().contains(&m.from().id())
                     {
                         continue;
                     }
@@ -201,13 +201,13 @@ impl ChatRoom {
             Message::Emote(ref m) => {
                 self.history.push(msg.clone());
                 for (_, member) in self.members.iter() {
-                    if m.from().is_muted() && member.user.id == m.from().id() {
+                    if m.from().is_muted() && member.user.id() == m.from().id() {
                         member.send_user_is_muted_message().await?;
                     }
                     if m.from().is_muted() {
                         continue;
                     }
-                    if member.user.ignored.contains(&m.from().id()) {
+                    if member.user.ignored().contains(&m.from().id()) {
                         continue;
                     }
                     if let Err(_) = member.send_message(msg.clone()).await {
@@ -218,16 +218,16 @@ impl ChatRoom {
             Message::Announce(ref m) => {
                 self.history.push(msg.clone());
                 for (_, member) in self.members.iter() {
-                    if m.from().is_muted() && member.user.id == m.from().id() {
+                    if m.from().is_muted() && member.user.id() == m.from().id() {
                         member.send_user_is_muted_message().await?;
                     }
                     if m.from().is_muted() {
                         continue;
                     }
-                    if member.user.config.quiet() {
+                    if member.user.config().quiet() {
                         continue;
                     }
-                    if member.user.ignored.contains(&m.from().id()) {
+                    if member.user.ignored().contains(&m.from().id()) {
                         continue;
                     }
                     if let Err(_) = member.send_message(msg.clone()).await {
@@ -244,7 +244,7 @@ impl ChatRoom {
                 }
 
                 let to = self.find_member(&m.to().username());
-                if !to.user.ignored.contains(&m.from().id()) {
+                if !to.user.ignored().contains(&m.from().id()) {
                     to.send_message(msg).await?;
                 }
             }
@@ -260,7 +260,7 @@ impl ChatRoom {
 
         let mut members = vec![];
         for member in self.members.values() {
-            if member.user.username.starts_with(prefix) {
+            if member.user.username().starts_with(prefix) {
                 members.push(member.clone());
             }
         }
@@ -268,7 +268,7 @@ impl ChatRoom {
         // Sort in descending order (recently active first)
         members.sort_by(|a, b| b.last_sent_time().cmp(&a.last_sent_time()));
 
-        let names: Vec<&UserName> = members.iter().map(|m| &m.user.username).collect();
+        let names: Vec<&UserName> = members.iter().map(|m| m.user.username()).collect();
         if names.is_empty() {
             return None;
         } else if names[0] != skip {

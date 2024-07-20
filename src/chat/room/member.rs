@@ -35,9 +35,9 @@ impl RoomMember {
     }
 
     pub async fn send_message(&self, msg: Message) -> Result<(), mpsc::error::SendError<String>> {
-        let message = match self.user.config.timestamp_mode().format() {
-            Some(fmt) => msg.format_with_timestamp(&self.user.config, fmt),
-            None => msg.format(&self.user.config),
+        let message = match self.user.config().timestamp_mode().format() {
+            Some(fmt) => msg.format_with_timestamp(&self.user.config(), fmt),
+            None => msg.format(&self.user.config()),
         };
         self.message_tx.send(message).await
     }

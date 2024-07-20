@@ -54,7 +54,7 @@ where
         match command_str.parse::<Command>() {
             Err(err) if err == CommandParseError::NotRecognizedAsCommand => {
                 terminal.clear_input()?;
-                room.find_member_mut(&user.username)
+                room.find_member_mut(&user.username())
                     .update_last_sent_time(Utc::now());
                 let message = message::Public::new(user.clone().into(), input_str);
                 room.send_message(message.into()).await?;

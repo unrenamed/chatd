@@ -57,7 +57,7 @@ where
         let cmd = words_iter.next().unwrap_or(&input_str);
         let (cmd_prefix, cmd_end_pos, cmd_prefix_end_pos) = get_argument_details(cmd, 0);
 
-        let commands = match auth.is_op(&context.user.public_key) {
+        let commands = match auth.is_op(&context.user.public_key()) {
             true => CHAT_COMMANDS.clone(),
             false => NOOP_CHAT_COMMANDS.clone(),
         };
@@ -96,7 +96,7 @@ where
                         while let Some(name) = words_iter.next() {
                             let new_name_end_pos = prev_name_end_pos + name.len();
                             complete_argument(name, prev_name_end_pos, terminal, |prefix| {
-                                room.find_name_by_prefix(prefix, context.user.username.as_ref())
+                                room.find_name_by_prefix(prefix, context.user.username().as_ref())
                             })?;
                             prev_name_end_pos = new_name_end_pos;
                         }
@@ -134,7 +134,7 @@ where
                         while let Some(name) = words_iter.next() {
                             let new_name_end_pos = prev_name_end_pos + name.len();
                             complete_argument(name, prev_name_end_pos, terminal, |prefix| {
-                                room.find_name_by_prefix(prefix, context.user.username.as_ref())
+                                room.find_name_by_prefix(prefix, context.user.username().as_ref())
                             })?;
                             prev_name_end_pos = new_name_end_pos;
                         }
@@ -163,7 +163,7 @@ where
             cmd if cmd.args().starts_with("<user>") || cmd.args().starts_with("[user]") => {
                 let user = words_iter.next().unwrap_or_default();
                 complete_argument(user, cmd_end_pos, terminal, |prefix| {
-                    room.find_name_by_prefix(prefix, context.user.username.as_ref())
+                    room.find_name_by_prefix(prefix, context.user.username().as_ref())
                 })?;
             }
             _ => {}
@@ -314,7 +314,7 @@ mod should {
     #[tokio::test]
     async fn complete_all_op_commands() {
         let (mut auth, mut terminal, mut room, mut context, mut autocomplete) = setup!();
-        auth.add_operator(context.user.public_key.clone());
+        auth.add_operator(context.user.public_key().clone());
 
         let prefix_command_map = vec![
             ("/ba", "/ban"),
@@ -502,7 +502,7 @@ mod should {
         let (alice_exit_tx, _) = watch::channel(());
         room.join(
             1,
-            alice.username.into(),
+            alice.username().clone().into(),
             PubKey::default(),
             String::default(),
             alice_msg_tx,
@@ -515,7 +515,7 @@ mod should {
         let (bob_exit_tx, _) = watch::channel(());
         room.join(
             2,
-            bob.username.into(),
+            bob.username().clone().into(),
             PubKey::default(),
             String::default(),
             bob_msg_tx,
@@ -555,7 +555,7 @@ mod should {
     #[tokio::test]
     async fn complete_whitelist_subcommand() {
         let (mut auth, mut terminal, mut room, mut context, mut autocomplete) = setup!();
-        auth.add_operator(context.user.public_key.clone());
+        auth.add_operator(context.user.public_key().clone());
 
         let prefix_command_map = vec![
             ("o", "on"),
@@ -598,7 +598,7 @@ mod should {
     #[tokio::test]
     async fn complete_oplist_subcommand() {
         let (mut auth, mut terminal, mut room, mut context, mut autocomplete) = setup!();
-        auth.add_operator(context.user.public_key.clone());
+        auth.add_operator(context.user.public_key().clone());
 
         let prefix_command_map = vec![
             ("a", "add"),
@@ -638,7 +638,7 @@ mod should {
     #[tokio::test]
     async fn complete_whiltelist_load_command_arguments() {
         let (mut auth, mut terminal, mut room, mut context, mut autocomplete) = setup!();
-        auth.add_operator(context.user.public_key.clone());
+        auth.add_operator(context.user.public_key().clone());
 
         let prefix_arg_map = vec![("me", "merge"), ("re", "replace")];
 
@@ -674,7 +674,7 @@ mod should {
     #[tokio::test]
     async fn complete_oplist_load_command_arguments() {
         let (mut auth, mut terminal, mut room, mut context, mut autocomplete) = setup!();
-        auth.add_operator(context.user.public_key.clone());
+        auth.add_operator(context.user.public_key().clone());
 
         let prefix_arg_map = vec![("me", "merge"), ("re", "replace")];
 
@@ -707,7 +707,7 @@ mod should {
     #[tokio::test]
     async fn complete_whitelist_add_command_arguments() {
         let (mut auth, mut terminal, mut room, mut context, mut autocomplete) = setup!();
-        auth.add_operator(context.user.public_key.clone());
+        auth.add_operator(context.user.public_key().clone());
 
         let mut alice = User::default();
         alice.set_username("alice".into());
@@ -718,7 +718,7 @@ mod should {
         let (alice_exit_tx, _) = watch::channel(());
         room.join(
             1,
-            alice.username.into(),
+            alice.username().clone().into(),
             PubKey::default(),
             String::default(),
             alice_msg_tx,
@@ -731,7 +731,7 @@ mod should {
         let (bob_exit_tx, _) = watch::channel(());
         room.join(
             2,
-            bob.username.into(),
+            bob.username().clone().into(),
             PubKey::default(),
             String::default(),
             bob_msg_tx,
@@ -772,7 +772,7 @@ mod should {
     #[tokio::test]
     async fn complete_oplist_add_command_arguments() {
         let (mut auth, mut terminal, mut room, mut context, mut autocomplete) = setup!();
-        auth.add_operator(context.user.public_key.clone());
+        auth.add_operator(context.user.public_key().clone());
 
         let mut alice = User::default();
         alice.set_username("alice".into());
@@ -783,7 +783,7 @@ mod should {
         let (alice_exit_tx, _) = watch::channel(());
         room.join(
             1,
-            alice.username.into(),
+            alice.username().clone().into(),
             PubKey::default(),
             String::default(),
             alice_msg_tx,
@@ -796,7 +796,7 @@ mod should {
         let (bob_exit_tx, _) = watch::channel(());
         room.join(
             2,
-            bob.username.into(),
+            bob.username().clone().into(),
             PubKey::default(),
             String::default(),
             bob_msg_tx,
