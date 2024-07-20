@@ -82,3 +82,36 @@ impl std::fmt::Display for UserName {
         write!(f, "{}", self.0)
     }
 }
+
+#[cfg(test)]
+mod should {
+    use rand::{rngs::StdRng, SeedableRng};
+
+    use super::*;
+
+    #[test]
+    fn generate_username_with_correct_format() {
+        let seed = [0u8; 32]; // A fixed seed
+        let mut rng = StdRng::from_seed(seed);
+        let username: UserName = rng.gen();
+        // Since the seed is fixed, the generated username should be consistent across runs
+        assert_eq!(username.0, "EagerEagle8340");
+    }
+
+    #[test]
+    fn generate_unique_usernames() {
+        let mut rng = rand::thread_rng();
+        let mut usernames = std::collections::HashSet::new();
+        let iterations = 1000;
+
+        for _ in 0..iterations {
+            let username: UserName = rng.gen();
+            assert!(
+                usernames.insert(username.0.clone()),
+                "Generated duplicate username"
+            );
+        }
+
+        assert_eq!(usernames.len(), iterations, "Expected unique usernames");
+    }
+}
