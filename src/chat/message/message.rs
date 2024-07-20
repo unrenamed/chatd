@@ -360,3 +360,138 @@ impl MessageFormatter for Command {
         )
     }
 }
+
+#[cfg(test)]
+mod should {
+    use chrono::TimeZone;
+
+    use super::*;
+    use crate::chat::{User, UserConfig};
+
+    // Helper function to create a mock UserConfig
+    fn mock_user_config() -> UserConfig {
+        UserConfig::default()
+    }
+
+    fn mock_user_config_with_highlight() -> UserConfig {
+        let mut user = User::default();
+        user.set_username("alice".into());
+        user.config().clone()
+    }
+
+    fn mock_author() -> Author {
+        let mut user = User::default();
+        user.set_username("alice".into());
+        user.into()
+    }
+
+    fn mock_recipient() -> Recipient {
+        let mut user = User::default();
+        user.set_username("bob".into());
+        user.into()
+    }
+
+    #[test]
+    fn format_public_message_correctly() {
+        let author = mock_author();
+        let msg = Public::new(author.clone(), "hello world".to_string());
+        let cfg = mock_user_config();
+        let formatted_msg = msg.format(&cfg);
+        assert_eq!(
+            formatted_msg,
+            "\u{1b}[38;2;104;128;66malice\u{1b}[39m: hello world"
+        );
+    }
+
+    #[test]
+    fn format_public_message_with_highlight_correctly() {
+        let author = mock_author();
+        let msg = Public::new(author.clone(), "hello @alice".to_string());
+        let cfg = mock_user_config_with_highlight();
+        let formatted_msg = msg.format(&cfg);
+        assert_eq!(
+            formatted_msg,
+            "\u{1b}[38;2;104;128;66malice\u{1b}[39m: hello \u{1b}[48;5;3m\u{1b}[38;5;0m\u{1b}[1m@alice\u{1b}[0m"
+        );
+    }
+
+    #[test]
+    fn format_private_message_correctly() {
+        let author = mock_author();
+        let recipient = mock_recipient();
+        let msg = Private::new(author.clone(), recipient.clone(), "hello".to_string());
+        let cfg = mock_user_config();
+        let formatted_msg = msg.format(&cfg);
+        assert_eq!(
+            formatted_msg,
+            "[PM from \u{1b}[38;2;104;128;66malice\u{1b}[39m] \u{1b}[38;5;15mhello\u{1b}[39m\u{7}"
+        );
+    }
+
+    #[test]
+    fn format_emote_message_correctly() {
+        let author = mock_author();
+        let msg = Emote::new(author.clone(), "waves".to_string());
+        let cfg = mock_user_config();
+        let formatted_msg = msg.format(&cfg);
+        assert_eq!(formatted_msg, "\u{1b}[38;5;15m ** alice waves\u{1b}[39m");
+    }
+
+    #[test]
+    fn format_announce_message_correctly() {
+        let author = mock_author();
+        let msg = Announce::new(author.clone(), "announcement".to_string());
+        let cfg = mock_user_config();
+        let formatted_msg = msg.format(&cfg);
+        assert_eq!(
+            formatted_msg,
+            "\u{1b}[38;5;8m * alice announcement\u{1b}[39m"
+        );
+    }
+
+    #[test]
+    fn format_system_message_correctly() {
+        let author = mock_author();
+        let msg = System::new(author.clone(), "system message".to_string());
+        let cfg = mock_user_config();
+        let formatted_msg = msg.format(&cfg);
+        assert_eq!(formatted_msg, "\u{1b}[38;5;8m-> system message\u{1b}[39m");
+    }
+
+    #[test]
+    fn format_error_message_correctly() {
+        let author = mock_author();
+        let msg = Error::new(author.clone(), "error occurred".to_string());
+        let cfg = mock_user_config();
+        let formatted_msg = msg.format(&cfg);
+        assert_eq!(
+            formatted_msg,
+            "\u{1b}[38;5;8m-> Error: error occurred\u{1b}[39m"
+        );
+    }
+
+    #[test]
+    fn format_command_message_correctly() {
+        let author = mock_author();
+        let msg = Command::new(author.clone(), "command executed".to_string());
+        let cfg = mock_user_config();
+        let formatted_msg = msg.format(&cfg);
+        assert_eq!(
+            formatted_msg,
+            "[\u{1b}[38;2;104;128;66malice\u{1b}[39m] \u{1b}[38;5;15mcommand executed\u{1b}[39m"
+        );
+    }
+
+    #[test]
+    fn format_message_with_timestamp() {
+        let author = mock_author();
+        let timestamp = Utc.with_ymd_and_hms(2024, 7, 19, 12, 34, 56).unwrap();
+
+        let mut msg = Public::new(author.clone(), "hello world".to_string());
+        msg.base.created_at = timestamp;
+
+        let cfg = mock_user_config();
+        let formatted_msg = msg.format_with_timestamp(&cfg, "%Y-%m-%d %H:%M:%S");
+        assert_eq!(formatted_msg, "\u{1b}[38;5;8m2024-07-19 12:34:56\u{1b}[39m \u{1b}[38;2;104;128;66malice\u{1b}[39m: hello world");
+    }
+}
