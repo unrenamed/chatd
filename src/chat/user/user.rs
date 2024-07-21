@@ -178,3 +178,126 @@ impl Display for User {
         }
     }
 }
+
+#[cfg(test)]
+mod should {
+    use chrono::Utc;
+
+    use super::*;
+    use crate::{chat::Theme, pubkey::PubKey};
+
+    fn create_test_user() -> User {
+        let username = UserName::from("test_user");
+        let ssh_client = "ssh-client-1.0".to_string();
+        let public_key = PubKey::default();
+        User::new(1, username, ssh_client, public_key)
+    }
+
+    #[test]
+    fn return_active_status() {
+        let mut user = create_test_user();
+        user.go_away("BRB".to_string());
+        match user.status() {
+            UserStatus::Away { reason, since } => {
+                assert_eq!(reason, "BRB");
+                assert_eq!(since.timestamp(), Utc::now().timestamp());
+            }
+            _ => panic!("User is not away"),
+        }
+        user.return_active();
+        assert_eq!(user.status(), &UserStatus::Active);
+    }
+
+    #[test]
+    fn switch_mute_mode() {
+        let mut user = create_test_user();
+        assert!(!user.is_muted());
+        user.switch_mute_mode();
+        assert!(user.is_muted());
+        user.switch_mute_mode();
+        assert!(!user.is_muted());
+    }
+
+    #[test]
+    fn set_username() {
+        let mut user = create_test_user();
+        let new_username = UserName::from("new_username");
+        user.set_username(new_username.clone());
+        assert_eq!(user.username(), &new_username);
+        assert_eq!(
+            user.config().display_name(),
+            "\u{1b}[38;2;99;247;255mnew_username\u{1b}[39m"
+        );
+        assert_eq!(user.config().highlight().unwrap(), "@new_username");
+    }
+
+    #[test]
+    fn set_theme() {
+        let mut user = create_test_user();
+        let new_theme: UserTheme = Theme::Colors.into();
+        user.set_theme(new_theme.clone());
+        assert_eq!(user.config().theme(), &new_theme);
+    }
+
+    #[test]
+    fn joined_duration() {
+        let user = create_test_user();
+        let duration = user.joined_duration();
+        assert!(duration.as_secs() < 5); // Assuming the test runs within 5 seconds
+    }
+
+    #[test]
+    fn display_format() {
+        let user = create_test_user();
+        let display = format!("{}", user);
+        assert!(display.contains("name: test_user"));
+        assert!(display.contains(&format!(
+            "fingerprint: SHA256: {}",
+            user.public_key.fingerprint()
+        )));
+        assert!(display.contains("client: ssh-client-1.0"));
+        assert!(display.contains("joined: 0s ago"));
+    }
+
+    #[test]
+    fn display_format_away_user() {
+        let mut user = create_test_user();
+        user.go_away("BRB".to_string());
+        let display = format!("{}", user);
+        assert!(display.contains("away (0s ago) BRB"));
+    }
+
+    #[test]
+    fn ignore_unignore() {
+        let mut user = create_test_user();
+        user.ignore(2);
+        assert!(user.ignored().contains(&2));
+        user.unignore(&2);
+        assert!(!user.ignored().contains(&2));
+    }
+
+    #[test]
+    fn focus_unfocus() {
+        let mut user = create_test_user();
+        user.focus(2);
+        assert!(user.focused().contains(&2));
+        user.unfocus(&2);
+        assert!(!user.focused().contains(&2));
+    }
+
+    #[test]
+    fn set_reply_to() {
+        let mut user = create_test_user();
+        user.set_reply_to(3);
+        assert_eq!(user.reply_to(), &Some(3));
+    }
+
+    #[test]
+    fn unfocus_all() {
+        let mut user = create_test_user();
+        user.focus(2);
+        user.focus(3);
+        user.unfocus_all();
+        assert!(user.focused().is_empty());
+    }
+}

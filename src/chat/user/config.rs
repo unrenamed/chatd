@@ -22,6 +22,12 @@ impl PartialEq for HighlightRegex {
     }
 }
 
+impl PartialEq<str> for HighlightRegex {
+    fn eq(&self, other: &str) -> bool {
+        self.0.as_str() == other
+    }
+}
+
 impl From<regex::Regex> for HighlightRegex {
     fn from(value: regex::Regex) -> Self {
         Self(value)
