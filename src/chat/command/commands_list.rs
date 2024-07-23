@@ -103,3 +103,154 @@ fn filter_op<C: CommandProps + Clone>(cmd: &C) -> bool {
 fn filter_noop<C: CommandProps + Clone>(cmd: &C) -> bool {
     !cmd.is_op()
 }
+
+#[cfg(test)]
+mod should {
+    use super::*;
+
+    #[test]
+    fn format_commands_correctly() {
+        let commands = vec![
+            MockCommand {
+                cmd: "cmd1",
+                args: "args1",
+                help: "help1",
+                is_visible: true,
+                is_op: false,
+            },
+            MockCommand {
+                cmd: "cmd2",
+                args: "args2",
+                help: "help2",
+                is_visible: true,
+                is_op: false,
+            },
+        ];
+        let expected =
+            "cmd1       args1                help1\n\rcmd2       args2                help2";
+        assert_eq!(format_commands(&commands), expected);
+    }
+
+    #[test]
+    fn sort_by_command_length() {
+        let mut commands = vec![
+            MockCommand {
+                cmd: "cmd1",
+                args: "",
+                help: "",
+                is_visible: true,
+                is_op: false,
+            },
+            MockCommand {
+                cmd: "cmd",
+                args: "",
+                help: "",
+                is_visible: true,
+                is_op: false,
+            },
+        ];
+        commands.sort_by(order_asc);
+        assert_eq!(commands[0].cmd, "cmd");
+        assert_eq!(commands[1].cmd, "cmd1");
+    }
+
+    #[test]
+    fn filter_visible_commands() {
+        let commands = vec![
+            MockCommand {
+                cmd: "cmd1",
+                args: "",
+                help: "",
+                is_visible: true,
+                is_op: false,
+            },
+            MockCommand {
+                cmd: "cmd2",
+                args: "",
+                help: "",
+                is_visible: false,
+                is_op: false,
+            },
+        ];
+        let filtered: Vec<_> = commands.into_iter().filter(filter_to_display).collect();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].cmd, "cmd1");
+    }
+
+    #[test]
+    fn filter_op_commands() {
+        let commands = vec![
+            MockCommand {
+                cmd: "cmd1",
+                args: "",
+                help: "",
+                is_visible: true,
+                is_op: true,
+            },
+            MockCommand {
+                cmd: "cmd2",
+                args: "",
+                help: "",
+                is_visible: true,
+                is_op: false,
+            },
+        ];
+        let filtered: Vec<_> = commands.into_iter().filter(filter_op).collect();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].cmd, "cmd1");
+    }
+
+    #[test]
+    fn filter_noop_commands() {
+        let commands = vec![
+            MockCommand {
+                cmd: "cmd1",
+                args: "",
+                help: "",
+                is_visible: true,
+                is_op: true,
+            },
+            MockCommand {
+                cmd: "cmd2",
+                args: "",
+                help: "",
+                is_visible: true,
+                is_op: false,
+            },
+        ];
+        let filtered: Vec<_> = commands.into_iter().filter(filter_noop).collect();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].cmd, "cmd2");
+    }
+
+    #[derive(Debug, Clone)]
+    struct MockCommand {
+        cmd: &'static str,
+        args: &'static str,
+        help: &'static str,
+        is_visible: bool,
+        is_op: bool,
+    }
+
+    impl CommandProps for MockCommand {
+        fn cmd(&self) -> &str {
+            self.cmd
+        }
+
+        fn args(&self) -> &str {
+            self.args
+        }
+
+        fn help(&self) -> &str {
+            self.help
+        }
+
+        fn is_visible(&self) -> bool {
+            self.is_visible
+        }
+
+        fn is_op(&self) -> bool {
+            self.is_op
+        }
+    }
+}

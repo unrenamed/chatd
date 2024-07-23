@@ -141,3 +141,144 @@ impl CommandProps for OplistCommand {
         self.get_str("Op").unwrap_or_default() == "true"
     }
 }
+
+#[cfg(test)]
+mod oplist_load_mode_should {
+    use super::*;
+
+    #[test]
+    fn recognize_merge() {
+        assert_eq!(
+            OplistLoadMode::from_prefix("mer"),
+            Some(OplistLoadMode::Merge)
+        );
+    }
+
+    #[test]
+    fn recognize_replace() {
+        assert_eq!(
+            OplistLoadMode::from_prefix("rep"),
+            Some(OplistLoadMode::Replace)
+        );
+    }
+
+    #[test]
+    fn return_none_for_unknown_prefix() {
+        assert_eq!(OplistLoadMode::from_prefix("unknown"), None);
+    }
+
+    #[test]
+    fn return_list_of_modes() {
+        assert_eq!(
+            OplistLoadMode::values(),
+            vec!["merge".to_string(), "replace".to_string()]
+        );
+    }
+
+    #[test]
+    fn display_modes() {
+        assert_eq!(OplistLoadMode::Merge.to_string(), "merge");
+        assert_eq!(OplistLoadMode::Replace.to_string(), "replace");
+    }
+}
+
+#[cfg(test)]
+mod oplist_command_should {
+    use super::*;
+
+    #[test]
+    fn parse_add_command() {
+        let command = "add user1 user2";
+        assert_eq!(
+            command.parse::<OplistCommand>(),
+            Ok(OplistCommand::Add("user1 user2".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_remove_command() {
+        let command = "remove user1 user2";
+        assert_eq!(
+            command.parse::<OplistCommand>(),
+            Ok(OplistCommand::Remove("user1 user2".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_load_command_with_merge() {
+        let command = "load merge";
+        assert_eq!(
+            command.parse::<OplistCommand>(),
+            Ok(OplistCommand::Load(OplistLoadMode::Merge))
+        );
+    }
+
+    #[test]
+    fn parse_load_command_with_replace() {
+        let command = "load replace";
+        assert_eq!(
+            command.parse::<OplistCommand>(),
+            Ok(OplistCommand::Load(OplistLoadMode::Replace))
+        );
+    }
+
+    #[test]
+    fn parse_save_command() {
+        let command = "save";
+        assert_eq!(command.parse::<OplistCommand>(), Ok(OplistCommand::Save));
+    }
+
+    #[test]
+    fn parse_status_command() {
+        let command = "status";
+        assert_eq!(command.parse::<OplistCommand>(), Ok(OplistCommand::Status));
+    }
+
+    #[test]
+    fn parse_help_command() {
+        let command = "help";
+        assert_eq!(command.parse::<OplistCommand>(), Ok(OplistCommand::Help));
+    }
+
+    #[test]
+    fn fail_for_unknown_command() {
+        let command = "unknown";
+        assert_eq!(
+            command.parse::<OplistCommand>(),
+            Err(CommandParseError::UnknownCommand)
+        );
+    }
+
+    #[test]
+    fn fail_for_add_command_without_args() {
+        let command = "add";
+        assert_eq!(
+            command.parse::<OplistCommand>(),
+            Err(CommandParseError::ArgumentExpected(
+                "list of users or keys".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn fail_for_remove_command_without_args() {
+        let command = "remove";
+        assert_eq!(
+            command.parse::<OplistCommand>(),
+            Err(CommandParseError::ArgumentExpected(
+                "list of users or keys".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn fail_for_load_command_with_invalid_mode() {
+        let command = "load invalid";
+        assert_eq!(
+            command.parse::<OplistCommand>(),
+            Err(CommandParseError::Other(
+                "load mode value must be one of: merge, replace".to_string()
+            ))
+        );
+    }
+}

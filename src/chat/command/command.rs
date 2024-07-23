@@ -310,3 +310,341 @@ impl CommandProps for Command {
         self.get_str("Op").unwrap_or_default() == "true"
     }
 }
+
+#[cfg(test)]
+mod should {
+    use super::*;
+
+    #[test]
+    fn parse_exit_command() {
+        assert_eq!("/exit".parse::<Command>().unwrap(), Command::Exit);
+    }
+
+    #[test]
+    fn parse_help_command() {
+        assert_eq!("/help".parse::<Command>().unwrap(), Command::Help);
+    }
+
+    #[test]
+    fn parse_version_command() {
+        assert_eq!("/version".parse::<Command>().unwrap(), Command::Version);
+    }
+
+    #[test]
+    fn parse_uptime_command() {
+        assert_eq!("/uptime".parse::<Command>().unwrap(), Command::Uptime);
+    }
+
+    #[test]
+    fn parse_back_command() {
+        assert_eq!("/back".parse::<Command>().unwrap(), Command::Back);
+    }
+
+    #[test]
+    fn parse_users_command() {
+        assert_eq!("/users".parse::<Command>().unwrap(), Command::Users);
+    }
+
+    #[test]
+    fn parse_shrug_command() {
+        assert_eq!("/shrug".parse::<Command>().unwrap(), Command::Shrug);
+    }
+
+    #[test]
+    fn parse_quiet_command() {
+        assert_eq!("/quiet".parse::<Command>().unwrap(), Command::Quiet);
+    }
+
+    #[test]
+    fn parse_themes_command() {
+        assert_eq!("/themes".parse::<Command>().unwrap(), Command::Themes);
+    }
+
+    #[test]
+    fn parse_banned_command() {
+        assert_eq!("/banned".parse::<Command>().unwrap(), Command::Banned);
+    }
+
+    #[test]
+    fn parse_away_command_with_args() {
+        assert_eq!(
+            "/away Out for lunch".parse::<Command>().unwrap(),
+            Command::Away("Out for lunch".to_string())
+        );
+    }
+
+    #[test]
+    fn fail_to_parse_away_command_without_args() {
+        assert_eq!(
+            "/away".parse::<Command>(),
+            Err(CommandParseError::ArgumentExpected(
+                "away reason".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn parse_name_command() {
+        assert_eq!(
+            "/name new_user".parse::<Command>().unwrap(),
+            Command::Name("new_user".to_string())
+        );
+    }
+
+    #[test]
+    fn fail_to_parse_name_command_without_args() {
+        assert_eq!(
+            "/name".parse::<Command>(),
+            Err(CommandParseError::ArgumentExpected("new name".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_ban_command() {
+        assert_eq!(
+            "/ban spammer".parse::<Command>().unwrap(),
+            Command::Ban("spammer".to_string())
+        );
+    }
+
+    #[test]
+    fn fail_to_parse_ban_command_without_args() {
+        assert_eq!(
+            "/ban".parse::<Command>(),
+            Err(CommandParseError::ArgumentExpected("ban query".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_whitelist_command() {
+        assert_eq!(
+            "/whitelist add user".parse::<Command>().unwrap(),
+            Command::Whitelist(WhitelistCommand::Add("user".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_oplist_command() {
+        assert_eq!(
+            "/oplist add operator".parse::<Command>().unwrap(),
+            Command::Oplist(OplistCommand::Add("operator".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_motd_command_with_args() {
+        assert_eq!(
+            "/motd Welcome!".parse::<Command>().unwrap(),
+            Command::Motd(Some("Welcome!".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_motd_command_without_args() {
+        assert_eq!("/motd".parse::<Command>().unwrap(), Command::Motd(None));
+    }
+
+    #[test]
+    fn parse_me_command_with_args() {
+        assert_eq!(
+            "/me is happy".parse::<Command>().unwrap(),
+            Command::Me(Some("is happy".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_me_command_without_args() {
+        assert_eq!("/me".parse::<Command>().unwrap(), Command::Me(None));
+    }
+
+    #[test]
+    fn parse_reply_command() {
+        assert_eq!(
+            "/reply Sure thing!".parse::<Command>().unwrap(),
+            Command::Reply("Sure thing!".to_string())
+        );
+    }
+
+    #[test]
+    fn fail_to_parse_reply_command_without_args() {
+        assert_eq!(
+            "/reply".parse::<Command>(),
+            Err(CommandParseError::ArgumentExpected(
+                "message body".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn parse_whois_command() {
+        assert_eq!(
+            "/whois username".parse::<Command>().unwrap(),
+            Command::Whois("username".to_string())
+        );
+    }
+
+    #[test]
+    fn fail_to_parse_whois_command_without_args() {
+        assert_eq!(
+            "/whois".parse::<Command>(),
+            Err(CommandParseError::ArgumentExpected("user name".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_slap_command_with_args() {
+        assert_eq!(
+            "/slap user".parse::<Command>().unwrap(),
+            Command::Slap(Some("user".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_slap_command_without_args() {
+        assert_eq!("/slap".parse::<Command>().unwrap(), Command::Slap(None));
+    }
+
+    #[test]
+    fn parse_timestamp_command_with_valid_mode() {
+        assert_eq!(
+            "/timestamp time".parse::<Command>().unwrap(),
+            Command::Timestamp(TimestampMode::Time)
+        );
+    }
+
+    #[test]
+    fn fail_to_parse_timestamp_command_with_invalid_mode() {
+        assert_eq!(
+            "/timestamp invalid_mode".parse::<Command>(),
+            Err(CommandParseError::Other(
+                "timestamp mode value must be one of: time, datetime, off".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn parse_theme_command_with_valid_theme() {
+        assert_eq!(
+            "/theme colors".parse::<Command>().unwrap(),
+            Command::Theme(Theme::Colors)
+        );
+    }
+
+    #[test]
+    fn fail_to_parse_theme_command_with_invalid_theme() {
+        assert_eq!(
+            "/theme invalid_theme".parse::<Command>(),
+            Err(CommandParseError::Other(
+                "theme value must be one of: colors, mono, hacker".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn parse_ignore_command_with_args() {
+        assert_eq!(
+            "/ignore user".parse::<Command>().unwrap(),
+            Command::Ignore(Some("user".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_ignore_command_without_args() {
+        assert_eq!("/ignore".parse::<Command>().unwrap(), Command::Ignore(None));
+    }
+
+    #[test]
+    fn parse_unignore_command() {
+        assert_eq!(
+            "/unignore user".parse::<Command>().unwrap(),
+            Command::Unignore("user".to_string())
+        );
+    }
+
+    #[test]
+    fn fail_to_parse_unignore_command_without_args() {
+        assert_eq!(
+            "/unignore".parse::<Command>(),
+            Err(CommandParseError::ArgumentExpected("user name".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_focus_command_with_args() {
+        assert_eq!(
+            "/focus user".parse::<Command>().unwrap(),
+            Command::Focus(Some("user".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_focus_command_without_args() {
+        assert_eq!("/focus".parse::<Command>().unwrap(), Command::Focus(None));
+    }
+
+    #[test]
+    fn parse_mute_command() {
+        assert_eq!(
+            "/mute user".parse::<Command>().unwrap(),
+            Command::Mute("user".to_string())
+        );
+    }
+
+    #[test]
+    fn fail_to_parse_mute_command_without_args() {
+        assert_eq!(
+            "/mute".parse::<Command>(),
+            Err(CommandParseError::ArgumentExpected("user name".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_kick_command() {
+        assert_eq!(
+            "/kick user".parse::<Command>().unwrap(),
+            Command::Kick("user".to_string())
+        );
+    }
+
+    #[test]
+    fn fail_to_parse_kick_command_without_args() {
+        assert_eq!(
+            "/kick".parse::<Command>(),
+            Err(CommandParseError::ArgumentExpected("user name".to_string()))
+        );
+    }
+
+    #[test]
+    fn parse_msg_command_with_args() {
+        assert_eq!(
+            "/msg user Hello!".parse::<Command>().unwrap(),
+            Command::Msg("user".to_string(), "Hello!".to_string())
+        );
+    }
+
+    #[test]
+    fn fail_to_parse_msg_command_without_body() {
+        assert_eq!(
+            "/msg user".parse::<Command>(),
+            Err(CommandParseError::ArgumentExpected(
+                "message body".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn fail_to_parse_msg_command_without_args() {
+        assert_eq!(
+            "/msg".parse::<Command>(),
+            Err(CommandParseError::ArgumentExpected("user name".to_string()))
+        );
+    }
+
+    #[test]
+    fn fail_to_parse_invalid_command() {
+        assert_eq!(
+            "/invalid".parse::<Command>(),
+            Err(CommandParseError::UnknownCommand)
+        );
+    }
+}
