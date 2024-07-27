@@ -148,12 +148,13 @@ impl SessionRepository {
                     let user = room.find_member_by_id(id).user.clone();
                     let mut ctx = WorkflowContext::new(user);
 
-                    let mut text_bytes = vec![];
+                    let mut print_input = false;
                     let codes = keyboard_decoder::decode_bytes_to_codes(&data);
                     for code in codes {
                         if let Err(err) = match code {
                             KeyCode::Char(_) | KeyCode::Space => {
-                                text_bytes = [text_bytes, code.bytes()].concat();
+                                term.input.insert_before_cursor(&code.bytes());
+                                print_input = true;
                                 Ok(())
                             }
                             KeyCode::Tab => {
@@ -176,8 +177,7 @@ impl SessionRepository {
                         }
                     }
 
-                    if !text_bytes.is_empty() {
-                        term.input.insert_before_cursor(&text_bytes);
+                    if print_input {
                         if let Err(err) = term.print_input_line() {
                             error!("Failed to execute workflow for user {}: {}", id, err);
                         }
