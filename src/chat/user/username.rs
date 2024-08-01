@@ -3,23 +3,129 @@ use rand::seq::SliceRandom;
 use rand::Rng;
 use std::hash::Hash;
 
+const ADJECTIVES: &[&str] = &[
+    "Cool",
+    "Mighty",
+    "Brave",
+    "Clever",
+    "Happy",
+    "Calm",
+    "Eager",
+    "Gentle",
+    "Kind",
+    "Jolly",
+    "Swift",
+    "Bold",
+    "Fierce",
+    "Wise",
+    "Valiant",
+    "Bright",
+    "Noble",
+    "Zany",
+    "Epic",
+    "Radiant",
+    "Gracious",
+    "Stellar",
+    "Dynamic",
+    "Fearless",
+    "Graceful",
+    "Humble",
+    "Lively",
+    "Majestic",
+    "Nimble",
+    "Serene",
+    "Vivacious",
+    "Zealous",
+    "Charming",
+    "Daring",
+    "Elegant",
+    "Funky",
+    "Gleeful",
+    "Heroic",
+    "Inventive",
+    "Jubilant",
+    "Keen",
+    "Luminous",
+    "Magnetic",
+    "Noble",
+    "Optimistic",
+    "Peppy",
+    "Quirky",
+    "Robust",
+    "Spirited",
+    "Tenacious",
+    "Upbeat",
+    "Vigorous",
+    "Whimsical",
+    "Xenial",
+    "Youthful",
+    "Zesty",
+];
+
+const NOUNS: &[&str] = &[
+    "Tiger",
+    "Eagle",
+    "Panda",
+    "Shark",
+    "Lion",
+    "Wolf",
+    "Dragon",
+    "Phoenix",
+    "Hawk",
+    "Bear",
+    "Falcon",
+    "Panther",
+    "Griffin",
+    "Lynx",
+    "Orca",
+    "Cobra",
+    "Jaguar",
+    "Kraken",
+    "Pegasus",
+    "Stallion",
+    "Elephant",
+    "Gazelle",
+    "Otter",
+    "Penguin",
+    "Raven",
+    "Sparrow",
+    "Turtle",
+    "Walrus",
+    "Yak",
+    "Zebra",
+    "Buffalo",
+    "Cheetah",
+    "Dolphin",
+    "Elk",
+    "Fox",
+    "Giraffe",
+    "Hippo",
+    "Iguana",
+    "Koala",
+    "Lemur",
+    "Moose",
+    "Narwhal",
+    "Ostrich",
+    "Parrot",
+    "Quokka",
+    "Rabbit",
+    "Seal",
+    "Tarantula",
+    "Urchin",
+    "Viper",
+    "Wombat",
+    "Xerus",
+    "Yak",
+    "Zebu",
+];
+
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct UserName(String);
 
 impl Distribution<UserName> for Standard {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> UserName {
-        let adjectives = [
-            "Cool", "Mighty", "Brave", "Clever", "Happy", "Calm", "Eager", "Gentle", "Kind",
-            "Jolly", "Swift", "Bold", "Fierce", "Wise", "Valiant", "Bright", "Noble", "Zany",
-            "Epic",
-        ];
-        let nouns = [
-            "Tiger", "Eagle", "Panda", "Shark", "Lion", "Wolf", "Dragon", "Phoenix", "Hawk",
-            "Bear", "Falcon", "Panther", "Griffin", "Lynx", "Orca", "Cobra", "Jaguar", "Kraken",
-            "Pegasus", "Stallion",
-        ];
-        let adjective = adjectives.choose(rng).unwrap_or(&"Guest");
-        let noun = nouns.choose(rng).unwrap_or(&"User");
+        let adjective = ADJECTIVES.choose(rng).unwrap_or(&"Guest");
+        let noun = NOUNS.choose(rng).unwrap_or(&"User");
         let number: u16 = rng.gen_range(1..=9999);
 
         let username = format!("{}{}{}", adjective, noun, number);
@@ -95,7 +201,7 @@ mod should {
         let mut rng = StdRng::from_seed(seed);
         let username: UserName = rng.gen();
         // Since the seed is fixed, the generated username should be consistent across runs
-        assert_eq!(username.0, "EagerEagle8340");
+        assert_eq!(username.0, "FearlessKraken735");
     }
 
     #[test]
@@ -113,5 +219,28 @@ mod should {
         }
 
         assert_eq!(usernames.len(), iterations, "Expected unique usernames");
+    }
+
+    #[test]
+    fn distribute_generated_usernames_uniformly() {
+        let mut rng = rand::thread_rng();
+        let mut counts = std::collections::HashMap::new();
+        let total_samples = 100_000; // Large sample size for better distribution analysis
+
+        for _ in 0..total_samples {
+            let username: UserName = rng.gen();
+            *counts.entry(username.0).or_insert(0) += 1;
+        }
+
+        let mut frequencies = counts.values().cloned().collect::<Vec<_>>();
+        frequencies.sort_unstable();
+
+        let min = frequencies.first().copied().unwrap_or(0);
+        let max = frequencies.last().copied().unwrap_or(0);
+        let mean = frequencies.iter().sum::<usize>() as f64 / frequencies.len() as f64;
+
+        assert_eq!(min, 1, "Min frequency to equal 1");
+        assert!(max <= 3, "Max frequency to be not larger than 3");
+        assert!(mean <= 1.005, "Mean frequency to be not larger than 1.005");
     }
 }
