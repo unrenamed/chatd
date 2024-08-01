@@ -50,3 +50,99 @@ impl RoomMember {
         self.send_message(msg.into()).await
     }
 }
+
+#[cfg(test)]
+mod should {
+    use chrono::Utc;
+    use message::MessageBaseOps;
+    use tokio::sync::{mpsc, watch};
+
+    use super::*;
+    use crate::chat::{user::User, TimestampMode};
+
+    #[tokio::test]
+    async fn create_room_member() {
+        let (message_tx, _message_rx) = mpsc::channel(1);
+        let (_exit_tx, _exit_rx) = watch::channel(());
+        let user = User::default();
+
+        let room_member = RoomMember::new(user.clone(), message_tx, _exit_tx);
+
+        assert_eq!(room_member.user, user);
+        assert!(room_member.last_sent_time().is_none());
+    }
+
+    #[tokio::test]
+    async fn update_last_sent_time() {
+        let (message_tx, _message_rx) = mpsc::channel(1);
+        let (_exit_tx, _exit_rx) = watch::channel(());
+        let user = User::default();
+        let mut room_member = RoomMember::new(user.clone(), message_tx, _exit_tx);
+
+        let now = Utc::now();
+        room_member.update_last_sent_time(now);
+
+        assert_eq!(*room_member.last_sent_time(), Some(now));
+    }
+
+    #[tokio::test]
+    async fn send_message() {
+        let (message_tx, mut message_rx) = mpsc::channel(1);
+        let (_exit_tx, _exit_rx) = watch::channel(());
+        let user = User::default();
+        let room_member = RoomMember::new(user.clone(), message_tx, _exit_tx);
+
+        let msg = message::System::new(User::default().into(), "Hello".to_string());
+        let result = room_member.send_message(msg.into()).await;
+
+        assert!(result.is_ok());
+        let received_message = message_rx.recv().await.unwrap();
+        assert!(received_message.contains("Hello"));
+    }
+
+    #[tokio::test]
+    async fn send_message_with_timestamp() {
+        let (message_tx, mut message_rx) = mpsc::channel(1);
+        let (_exit_tx, _exit_rx) = watch::channel(());
+        let mut user = User::default();
+        user.config_mut().set_timestamp_mode(TimestampMode::Time);
+        let room_member = RoomMember::new(user.clone(), message_tx, _exit_tx);
+
+        let msg = message::System::new(User::default().into(), "Hello".to_string());
+        let timestamp = msg.message_created_at();
+        let timestamp_format = user.config().timestamp_mode().format().unwrap();
+
+        let result = room_member.send_message(msg.into()).await;
+        assert!(result.is_ok());
+        let received_message = message_rx.recv().await.unwrap();
+        assert!(received_message.contains(&timestamp.format(timestamp_format).to_string()));
+        assert!(received_message.contains("Hello"));
+    }
+
+    #[tokio::test]
+    async fn send_user_is_muted_message() {
+        let (message_tx, mut message_rx) = mpsc::channel(1);
+        let (_exit_tx, _exit_rx) = watch::channel(());
+        let user = User::default();
+        let room_member = RoomMember::new(user.clone(), message_tx, _exit_tx);
+
+        let result = room_member.send_user_is_muted_message().await;
+
+        assert!(result.is_ok());
+        let received_message = message_rx.recv().await.unwrap();
+        assert!(received_message.contains("You are muted and cannot send messages."));
+    }
+
+    #[tokio::test]
+    async fn exit() {
+        let (_message_tx, _message_rx) = mpsc::channel(1);
+        let (exit_tx, exit_rx) = watch::channel(());
+        let user = User::default();
+        let room_member = RoomMember::new(user.clone(), _message_tx, exit_tx);
+
+        let result = room_member.exit();
+
+        assert!(result.is_ok());
+        assert_eq!(*exit_rx.borrow(), ());
+    }
+}
