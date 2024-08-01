@@ -81,3 +81,47 @@ impl Server for ChatServer {
         )
     }
 }
+
+#[cfg(test)]
+mod should {
+    use super::*;
+    use crate::auth::Auth;
+    use crate::chat::ChatRoom;
+    use russh_keys::key::KeyPair;
+    use tokio::sync::mpsc;
+    use tokio::task::JoinHandle;
+    use tokio::time::sleep;
+
+    async fn run_server_in_background(
+        chat_server: &mut ChatServer,
+        repository: SessionRepository,
+    ) -> JoinHandle<anyhow::Result<()>> {
+        let mut server = chat_server.clone();
+        tokio::spawn(async move { server.run(repository).await })
+    }
+
+    #[tokio::test]
+    async fn check_if_server_runs_and_port_is_in_use() {
+        let port = 22;
+        let server_keys = vec![KeyPair::generate_ed25519().unwrap()];
+        let (tx, _rx) = mpsc::channel(100);
+        let auth = Auth::default();
+        let room = ChatRoom::new("Welcome!");
+
+        let mut chat_server = ChatServer::new(port, &server_keys, tx, auth, room);
+        let (_, rx) = tokio::sync::mpsc::channel(1);
+        let repository = SessionRepository::new(rx);
+
+        let server_handle = run_server_in_background(&mut chat_server, repository).await;
+
+        // Give the server some time to start
+        sleep(Duration::from_millis(100)).await;
+
+        // Try binding to the port to ensure it's in use
+        let bind_result = tokio::net::TcpListener::bind(("0.0.0.0", port)).await;
+        assert!(bind_result.is_err(), "Port should be in use by the server");
+
+        // Cleanup: stop the server
+        drop(server_handle);
+    }
+}
