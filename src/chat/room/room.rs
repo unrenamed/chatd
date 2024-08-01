@@ -313,3 +313,1074 @@ impl ChatRoom {
         self.names.get(user_id)
     }
 }
+
+#[cfg(test)]
+mod should {
+    use std::usize;
+
+    use super::*;
+    use crate::chat::user::{User, UserName};
+    use crate::pubkey::PubKey;
+    use message::Author;
+    use tokio::sync::{mpsc, watch};
+
+    pub struct MockChannel {
+        tx: mpsc::Sender<String>,
+        rx: mpsc::Receiver<String>,
+        messages: Vec<String>,
+    }
+
+    impl MockChannel {
+        pub fn new(buffer: usize) -> Self {
+            let (tx, rx) = mpsc::channel(buffer);
+            let messages = Vec::new();
+            Self { tx, rx, messages }
+        }
+    }
+
+    #[tokio::test]
+    async fn create_chat_room() {
+        let chat_room = ChatRoom::new("Welcome to the chat room!");
+
+        assert_eq!(chat_room.motd(), "Welcome to the chat room!");
+        assert_eq!(chat_room.uptime(), "0s");
+        assert!(chat_room.names().is_empty());
+        assert!(chat_room.members_iter().count() == 0);
+    }
+
+    #[tokio::test]
+    async fn set_and_get_motd() {
+        let mut chat_room = ChatRoom::new("Welcome!");
+        chat_room.set_motd("New MOTD".to_string());
+
+        assert_eq!(chat_room.motd(), "New MOTD");
+    }
+
+    #[tokio::test]
+    async fn add_and_remove_member() {
+        let (message_tx, _message_rx) = mpsc::channel(1);
+        let (_exit_tx, _exit_rx) = watch::channel(());
+        let user = User::default();
+        let username = UserName::from("alice");
+        let mut chat_room = ChatRoom::new("Welcome!");
+
+        let member = RoomMember::new(user.clone(), message_tx, _exit_tx);
+        chat_room.add_member(username.clone(), member);
+
+        assert!(chat_room.is_room_member(&username));
+        chat_room.remove_member(&username);
+        assert!(!chat_room.is_room_member(&username));
+    }
+
+    #[tokio::test]
+    async fn join_chat_room() {
+        let mut channel = MockChannel::new(5);
+        let (exit_tx, _exit_rx) = watch::channel(());
+        let mut chat_room = ChatRoom::new("Welcome!");
+
+        // Populate chat history
+        let history_message =
+            message::Public::new(Author::from(User::default()), "Hi all!".to_string());
+        assert!(chat_room.send_message(history_message.into()).await.is_ok());
+
+        // Join user
+        let user = chat_room
+            .join(
+                1,
+                "alice".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                channel.tx.clone(),
+                exit_tx,
+            )
+            .await;
+
+        assert!(user.is_ok());
+        assert!(chat_room.is_room_member("alice"));
+        assert_eq!(chat_room.names().get(&1).unwrap(), "alice");
+
+        // Receive exactly 3 messages
+        for _ in 0..3 {
+            match channel.rx.try_recv() {
+                Ok(msg) => channel.messages.push(msg),
+                Err(_) => panic!("Expected 3 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 3 messages
+        match channel.rx.try_recv() {
+            Ok(_) => panic!("More than 3 messages were received"),
+            Err(_) => {}
+        }
+
+        assert!(channel.messages[0].contains("Welcome!"),);
+        assert!(channel.messages[1].contains("Hi all!"),);
+        assert!(channel.messages[2].contains("alice joined. (Connected: 1)"),);
+    }
+
+    #[tokio::test]
+    async fn leave_chat_room() {
+        let mut channel = MockChannel::new(5);
+        let (exit_tx, _exit_rx) = watch::channel(());
+        let mut chat_room = ChatRoom::new("Welcome!");
+
+        // Join user
+        let _ = chat_room
+            .join(
+                1,
+                "alice".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                channel.tx.clone(),
+                exit_tx,
+            )
+            .await;
+
+        chat_room.leave(&1).await.unwrap();
+        assert!(!chat_room.is_room_member(&"alice"));
+        assert!(chat_room.names().get(&1).is_none());
+
+        // Receive exactly 3 messages
+        for _ in 0..3 {
+            match channel.rx.try_recv() {
+                Ok(msg) => channel.messages.push(msg),
+                Err(_) => panic!("Expected 3 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 3 messages
+        match channel.rx.try_recv() {
+            Ok(_) => panic!("More than 3 messages were received"),
+            Err(_) => {}
+        }
+
+        assert!(channel.messages[0].contains("Welcome!"));
+        assert!(channel.messages[1].contains("alice joined. (Connected: 1)"));
+        assert!(channel.messages[2].contains("alice left: (After 0s)"));
+    }
+
+    #[tokio::test]
+    async fn send_system_messages() {
+        let mut channel = MockChannel::new(5);
+        let (exit_tx, _exit_rx) = watch::channel(());
+        let mut chat_room = ChatRoom::new("Welcome!");
+
+        let user = chat_room
+            .join(
+                1,
+                "alice".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        let author: Author = user.into();
+        let system = message::System::new(author.clone(), "welcome to the chat".to_string());
+        let error = message::Error::new(author.clone(), "unknown command".to_string());
+        let command = message::Command::new(author.clone(), "/help".to_string());
+        assert!(chat_room.send_message(system.into()).await.is_ok());
+        assert!(chat_room.send_message(error.into()).await.is_ok());
+        assert!(chat_room.send_message(command.into()).await.is_ok());
+
+        // Receive exactly 5 messages
+        for _ in 0..5 {
+            match channel.rx.try_recv() {
+                Ok(msg) => channel.messages.push(msg),
+                Err(_) => panic!("Expected 3 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 5 messages
+        match channel.rx.try_recv() {
+            Ok(_) => panic!("More than 5 messages were received"),
+            Err(_) => {}
+        }
+
+        assert!(channel.messages[2].contains("-> welcome to the chat"));
+        assert!(channel.messages[3].contains("Error: unknown command"));
+        assert!(channel.messages[4].contains("/help"));
+    }
+
+    #[tokio::test]
+    async fn send_public_message() {
+        let (exit_tx, _exit_rx) = watch::channel(());
+        let mut chat_room = ChatRoom::new("Welcome!");
+
+        let mut author_channel = MockChannel::new(5);
+        let author = chat_room
+            .join(
+                1,
+                "alice".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                author_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        let mut recipient_channel = MockChannel::new(5);
+        let _ = chat_room
+            .join(
+                2,
+                "bob".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                recipient_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        let msg = message::Public::new(author.into(), "Hello, World!".to_string());
+        assert!(chat_room.send_message(msg.into()).await.is_ok());
+
+        // Receive exactly 4 messages
+        for _ in 0..4 {
+            match author_channel.rx.try_recv() {
+                Ok(msg) => author_channel.messages.push(msg),
+                Err(_) => panic!("Expected 4 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 4 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 4 messages were received"),
+            Err(_) => {}
+        }
+
+        // Receive exactly 4 messages
+        for _ in 0..4 {
+            match recipient_channel.rx.try_recv() {
+                Ok(msg) => recipient_channel.messages.push(msg),
+                Err(_) => panic!("Expected 4 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 4 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 4 messages were received"),
+            Err(_) => {}
+        }
+
+        assert!(author_channel.messages[3].contains("Hello, World!"));
+        assert!(recipient_channel.messages[3].contains("Hello, World!"));
+    }
+
+    #[tokio::test]
+    async fn not_send_public_message_if_author_is_muted() {
+        let (exit_tx, _exit_rx) = watch::channel(());
+        let mut chat_room = ChatRoom::new("Welcome!");
+
+        let mut author_channel = MockChannel::new(5);
+        let mut author = chat_room
+            .join(
+                1,
+                "alice".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                author_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        author.switch_mute_mode();
+
+        let mut recipient_channel = MockChannel::new(5);
+        let _ = chat_room
+            .join(
+                2,
+                "bob".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                recipient_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        let msg = message::Public::new(author.into(), "Hello, World!".to_string());
+        assert!(chat_room.send_message(msg.into()).await.is_ok());
+
+        // Receive exactly 4 messages
+        for _ in 0..4 {
+            match author_channel.rx.try_recv() {
+                Ok(msg) => author_channel.messages.push(msg),
+                Err(_) => panic!("Expected 4 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 4 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 4 messages were received"),
+            Err(_) => {}
+        }
+
+        // Receive exactly 3 messages
+        for _ in 0..3 {
+            match recipient_channel.rx.try_recv() {
+                Ok(msg) => recipient_channel.messages.push(msg),
+                Err(_) => panic!("Expected 3 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 3 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 3 messages were received"),
+            Err(_) => {}
+        }
+
+        assert!(author_channel.messages[3].contains("You are muted and cannot send messages."));
+        assert!(recipient_channel.messages[2].contains("bob joined"));
+    }
+
+    #[tokio::test]
+    async fn not_send_public_message_if_author_is_ignored_by_recipient() {
+        let (exit_tx, _exit_rx) = watch::channel(());
+        let mut chat_room = ChatRoom::new("Welcome!");
+
+        let mut author_channel = MockChannel::new(5);
+        let author = chat_room
+            .join(
+                1,
+                "alice".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                author_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        let mut recipient_channel = MockChannel::new(5);
+        let recipient = chat_room
+            .join(
+                2,
+                "bob".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                recipient_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        chat_room
+            .find_member_mut(recipient.username())
+            .user
+            .ignore(author.id());
+
+        let msg = message::Public::new(author.into(), "Hello, World!".to_string());
+        assert!(chat_room.send_message(msg.into()).await.is_ok());
+
+        // Receive exactly 4 messages
+        for _ in 0..4 {
+            match author_channel.rx.try_recv() {
+                Ok(msg) => author_channel.messages.push(msg),
+                Err(_) => panic!("Expected 4 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 4 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 4 messages were received"),
+            Err(_) => {}
+        }
+
+        // Receive exactly 3 messages
+        for _ in 0..3 {
+            match recipient_channel.rx.try_recv() {
+                Ok(msg) => recipient_channel.messages.push(msg),
+                Err(_) => panic!("Expected 3 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 3 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 3 messages were received"),
+            Err(_) => {}
+        }
+
+        assert!(author_channel.messages[3].contains("Hello, World!"));
+        assert!(recipient_channel.messages[2].contains("bob joined"));
+    }
+
+    #[tokio::test]
+    async fn not_send_public_message_if_author_is_not_in_focus_by_recipient() {
+        let (exit_tx, _exit_rx) = watch::channel(());
+        let mut chat_room = ChatRoom::new("Welcome!");
+
+        let mut author_channel = MockChannel::new(5);
+        let author = chat_room
+            .join(
+                1,
+                "alice".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                author_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        let mut recipient_channel = MockChannel::new(5);
+        let recipient = chat_room
+            .join(
+                2,
+                "bob".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                recipient_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        chat_room
+            .find_member_mut(recipient.username())
+            .user
+            .focus(usize::MAX); // focus at least one user, any user, except the message author
+
+        let msg = message::Public::new(author.into(), "Hello, World!".to_string());
+        assert!(chat_room.send_message(msg.into()).await.is_ok());
+
+        // Receive exactly 4 messages
+        for _ in 0..4 {
+            match author_channel.rx.try_recv() {
+                Ok(msg) => author_channel.messages.push(msg),
+                Err(_) => panic!("Expected 4 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 4 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 4 messages were received"),
+            Err(_) => {}
+        }
+
+        // Receive exactly 3 messages
+        for _ in 0..3 {
+            match recipient_channel.rx.try_recv() {
+                Ok(msg) => recipient_channel.messages.push(msg),
+                Err(_) => panic!("Expected 3 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 3 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 3 messages were received"),
+            Err(_) => {}
+        }
+
+        assert!(author_channel.messages[3].contains("Hello, World!"));
+        assert!(recipient_channel.messages[2].contains("bob joined"));
+    }
+
+    #[tokio::test]
+    async fn send_emote_message() {
+        let (exit_tx, _exit_rx) = watch::channel(());
+        let mut chat_room = ChatRoom::new("Welcome!");
+
+        let mut author_channel = MockChannel::new(5);
+        let author = chat_room
+            .join(
+                1,
+                "alice".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                author_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        let mut recipient_channel = MockChannel::new(5);
+        let _ = chat_room
+            .join(
+                2,
+                "bob".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                recipient_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        let msg = message::Emote::new(author.into(), "Hello, World!".to_string());
+        assert!(chat_room.send_message(msg.into()).await.is_ok());
+
+        // Receive exactly 4 messages
+        for _ in 0..4 {
+            match author_channel.rx.try_recv() {
+                Ok(msg) => author_channel.messages.push(msg),
+                Err(_) => panic!("Expected 4 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 4 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 4 messages were received"),
+            Err(_) => {}
+        }
+
+        // Receive exactly 4 messages
+        for _ in 0..4 {
+            match recipient_channel.rx.try_recv() {
+                Ok(msg) => recipient_channel.messages.push(msg),
+                Err(_) => panic!("Expected 4 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 4 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 4 messages were received"),
+            Err(_) => {}
+        }
+
+        assert!(author_channel.messages[3].contains("Hello, World!"));
+        assert!(recipient_channel.messages[3].contains("Hello, World!"));
+    }
+
+    #[tokio::test]
+    async fn not_send_emote_message_if_author_is_muted() {
+        let (exit_tx, _exit_rx) = watch::channel(());
+        let mut chat_room = ChatRoom::new("Welcome!");
+
+        let mut author_channel = MockChannel::new(5);
+        let mut author = chat_room
+            .join(
+                1,
+                "alice".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                author_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        author.switch_mute_mode();
+
+        let mut recipient_channel = MockChannel::new(5);
+        let _ = chat_room
+            .join(
+                2,
+                "bob".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                recipient_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        let msg = message::Emote::new(author.into(), "Hello, World!".to_string());
+        assert!(chat_room.send_message(msg.into()).await.is_ok());
+
+        // Receive exactly 4 messages
+        for _ in 0..4 {
+            match author_channel.rx.try_recv() {
+                Ok(msg) => author_channel.messages.push(msg),
+                Err(_) => panic!("Expected 4 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 4 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 4 messages were received"),
+            Err(_) => {}
+        }
+
+        // Receive exactly 3 messages
+        for _ in 0..3 {
+            match recipient_channel.rx.try_recv() {
+                Ok(msg) => recipient_channel.messages.push(msg),
+                Err(_) => panic!("Expected 3 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 3 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 3 messages were received"),
+            Err(_) => {}
+        }
+
+        assert!(author_channel.messages[3].contains("You are muted and cannot send messages."));
+        assert!(recipient_channel.messages[2].contains("bob joined"));
+    }
+
+    #[tokio::test]
+    async fn not_send_emote_message_if_author_is_ignored_by_recipient() {
+        let (exit_tx, _exit_rx) = watch::channel(());
+        let mut chat_room = ChatRoom::new("Welcome!");
+
+        let mut author_channel = MockChannel::new(5);
+        let author = chat_room
+            .join(
+                1,
+                "alice".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                author_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        let mut recipient_channel = MockChannel::new(5);
+        let recipient = chat_room
+            .join(
+                2,
+                "bob".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                recipient_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        chat_room
+            .find_member_mut(recipient.username())
+            .user
+            .ignore(author.id());
+
+        let msg = message::Emote::new(author.into(), "Hello, World!".to_string());
+        assert!(chat_room.send_message(msg.into()).await.is_ok());
+
+        // Receive exactly 4 messages
+        for _ in 0..4 {
+            match author_channel.rx.try_recv() {
+                Ok(msg) => author_channel.messages.push(msg),
+                Err(_) => panic!("Expected 4 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 4 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 4 messages were received"),
+            Err(_) => {}
+        }
+
+        // Receive exactly 3 messages
+        for _ in 0..3 {
+            match recipient_channel.rx.try_recv() {
+                Ok(msg) => recipient_channel.messages.push(msg),
+                Err(_) => panic!("Expected 3 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 3 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 3 messages were received"),
+            Err(_) => {}
+        }
+
+        assert!(author_channel.messages[3].contains("Hello, World!"));
+        assert!(recipient_channel.messages[2].contains("bob joined"));
+    }
+
+    #[tokio::test]
+    async fn send_announce_message() {
+        let (exit_tx, _exit_rx) = watch::channel(());
+        let mut chat_room = ChatRoom::new("Welcome!");
+
+        let mut author_channel = MockChannel::new(5);
+        let author = chat_room
+            .join(
+                1,
+                "alice".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                author_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        let mut recipient_channel = MockChannel::new(5);
+        let _ = chat_room
+            .join(
+                2,
+                "bob".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                recipient_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        let msg = message::Announce::new(author.into(), "Hello, World!".to_string());
+        assert!(chat_room.send_message(msg.into()).await.is_ok());
+
+        // Receive exactly 4 messages
+        for _ in 0..4 {
+            match author_channel.rx.try_recv() {
+                Ok(msg) => author_channel.messages.push(msg),
+                Err(_) => panic!("Expected 4 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 4 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 4 messages were received"),
+            Err(_) => {}
+        }
+
+        // Receive exactly 4 messages
+        for _ in 0..4 {
+            match recipient_channel.rx.try_recv() {
+                Ok(msg) => recipient_channel.messages.push(msg),
+                Err(_) => panic!("Expected 4 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 4 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 4 messages were received"),
+            Err(_) => {}
+        }
+
+        assert!(author_channel.messages[3].contains("Hello, World!"));
+        assert!(recipient_channel.messages[3].contains("Hello, World!"));
+    }
+
+    #[tokio::test]
+    async fn not_send_announce_message_if_author_is_muted() {
+        let (exit_tx, _exit_rx) = watch::channel(());
+        let mut chat_room = ChatRoom::new("Welcome!");
+
+        let mut author_channel = MockChannel::new(5);
+        let mut author = chat_room
+            .join(
+                1,
+                "alice".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                author_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        author.switch_mute_mode();
+
+        let mut recipient_channel = MockChannel::new(5);
+        let _ = chat_room
+            .join(
+                2,
+                "bob".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                recipient_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        let msg = message::Announce::new(author.into(), "Hello, World!".to_string());
+        assert!(chat_room.send_message(msg.into()).await.is_ok());
+
+        // Receive exactly 4 messages
+        for _ in 0..4 {
+            match author_channel.rx.try_recv() {
+                Ok(msg) => author_channel.messages.push(msg),
+                Err(_) => panic!("Expected 4 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 4 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 4 messages were received"),
+            Err(_) => {}
+        }
+
+        // Receive exactly 3 messages
+        for _ in 0..3 {
+            match recipient_channel.rx.try_recv() {
+                Ok(msg) => recipient_channel.messages.push(msg),
+                Err(_) => panic!("Expected 3 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 3 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 3 messages were received"),
+            Err(_) => {}
+        }
+
+        assert!(author_channel.messages[3].contains("You are muted and cannot send messages."));
+        assert!(recipient_channel.messages[2].contains("bob joined"));
+    }
+
+    #[tokio::test]
+    async fn not_send_announce_message_if_author_is_ignored_by_recipient() {
+        let (exit_tx, _exit_rx) = watch::channel(());
+        let mut chat_room = ChatRoom::new("Welcome!");
+
+        let mut author_channel = MockChannel::new(5);
+        let author = chat_room
+            .join(
+                1,
+                "alice".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                author_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        let mut recipient_channel = MockChannel::new(5);
+        let recipient = chat_room
+            .join(
+                2,
+                "bob".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                recipient_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        chat_room
+            .find_member_mut(recipient.username())
+            .user
+            .ignore(author.id());
+
+        let msg = message::Announce::new(author.into(), "Hello, World!".to_string());
+        assert!(chat_room.send_message(msg.into()).await.is_ok());
+
+        // Receive exactly 4 messages
+        for _ in 0..4 {
+            match author_channel.rx.try_recv() {
+                Ok(msg) => author_channel.messages.push(msg),
+                Err(_) => panic!("Expected 4 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 4 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 4 messages were received"),
+            Err(_) => {}
+        }
+
+        // Receive exactly 3 messages
+        for _ in 0..3 {
+            match recipient_channel.rx.try_recv() {
+                Ok(msg) => recipient_channel.messages.push(msg),
+                Err(_) => panic!("Expected 3 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 3 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 3 messages were received"),
+            Err(_) => {}
+        }
+
+        assert!(author_channel.messages[3].contains("Hello, World!"));
+        assert!(recipient_channel.messages[2].contains("bob joined"));
+    }
+
+    #[tokio::test]
+    async fn send_private_message() {
+        let (exit_tx, _exit_rx) = watch::channel(());
+        let mut chat_room = ChatRoom::new("Welcome!");
+
+        let mut author_channel = MockChannel::new(5);
+        let author = chat_room
+            .join(
+                1,
+                "alice".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                author_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        let mut recipient_channel = MockChannel::new(5);
+        let recipient = chat_room
+            .join(
+                2,
+                "bob".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                recipient_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        let msg = message::Private::new(author.into(), recipient.into(), "Hello, Bob!".to_string());
+        assert!(chat_room.send_message(msg.into()).await.is_ok());
+
+        // Receive exactly 3 messages
+        for _ in 0..3 {
+            match author_channel.rx.try_recv() {
+                Ok(msg) => author_channel.messages.push(msg),
+                Err(_) => panic!("Expected 3 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 3 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 3 messages were received"),
+            Err(_) => {}
+        }
+
+        // Receive exactly 4 messages
+        for _ in 0..4 {
+            match recipient_channel.rx.try_recv() {
+                Ok(msg) => recipient_channel.messages.push(msg),
+                Err(_) => panic!("Expected 4 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 4 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 4 messages were received"),
+            Err(_) => {}
+        }
+
+        assert!(author_channel.messages[2].contains("bob joined"));
+        assert!(recipient_channel.messages[3].contains("Hello, Bob!"));
+    }
+
+    #[tokio::test]
+    async fn not_send_private_message_from_muted_author() {
+        let (exit_tx, _exit_rx) = watch::channel(());
+        let mut chat_room = ChatRoom::new("Welcome!");
+
+        let mut author_channel = MockChannel::new(5);
+        let mut author = chat_room
+            .join(
+                1,
+                "alice".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                author_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        author.switch_mute_mode();
+
+        let mut recipient_channel = MockChannel::new(5);
+        let recipient = chat_room
+            .join(
+                2,
+                "bob".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                recipient_channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await
+            .unwrap();
+
+        let msg = message::Private::new(author.into(), recipient.into(), "Hello, Bob!".to_string());
+        assert!(chat_room.send_message(msg.into()).await.is_ok());
+
+        // Receive exactly 4 messages
+        for _ in 0..4 {
+            match author_channel.rx.try_recv() {
+                Ok(msg) => author_channel.messages.push(msg),
+                Err(_) => panic!("Expected 4 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 4 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 4 messages were received"),
+            Err(_) => {}
+        }
+
+        // Receive exactly 3 messages
+        for _ in 0..3 {
+            match recipient_channel.rx.try_recv() {
+                Ok(msg) => recipient_channel.messages.push(msg),
+                Err(_) => panic!("Expected 3 messages but received less"),
+            }
+        }
+
+        // Check if there are more than 3 messages
+        match author_channel.rx.try_recv() {
+            Ok(_) => panic!("More than 3 messages were received"),
+            Err(_) => {}
+        }
+
+        assert!(author_channel.messages[3].contains("You are muted and cannot send messages."));
+        assert!(recipient_channel.messages[2].contains("bob joined"));
+    }
+
+    #[tokio::test]
+    async fn find_name_by_prefix() {
+        let channel = MockChannel::new(10);
+        let (exit_tx, _exit_rx) = watch::channel(());
+        let mut chat_room = ChatRoom::new("Welcome!");
+
+        assert_eq!(chat_room.find_name_by_prefix("", ""), None);
+        assert_eq!(chat_room.find_name_by_prefix("jo", ""), None);
+
+        let _ = chat_room
+            .join(
+                1,
+                "john".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                channel.tx.clone(),
+                exit_tx.clone(),
+            )
+            .await;
+
+        assert_eq!(chat_room.find_name_by_prefix("jo", ""), Some("john".into()));
+        assert_eq!(chat_room.find_name_by_prefix("jo", "john"), None);
+
+        let _ = chat_room
+            .join(
+                2,
+                "johnathan".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                channel.tx.clone(),
+                exit_tx,
+            )
+            .await;
+
+        assert_eq!(
+            chat_room.find_name_by_prefix("jo", "john"),
+            Some("johnathan".into())
+        );
+    }
+
+    #[tokio::test]
+    async fn try_get_name() {
+        let channel = MockChannel::new(5);
+        let (exit_tx, _exit_rx) = watch::channel(());
+        let mut chat_room = ChatRoom::new("Welcome!");
+
+        let _ = chat_room
+            .join(
+                1,
+                "alice".to_string(),
+                PubKey::default(),
+                "ssh".to_string(),
+                channel.tx.clone(),
+                exit_tx,
+            )
+            .await;
+
+        assert_eq!(chat_room.try_get_name(&1).unwrap(), "alice");
+    }
+}
