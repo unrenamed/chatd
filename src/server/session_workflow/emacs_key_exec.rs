@@ -41,39 +41,42 @@ where
     ) -> anyhow::Result<()> {
         match self.key {
             KeyCode::Backspace => {
-                terminal.input.remove_before_cursor();
+                terminal.input.delete_prev_character();
                 terminal.print_input_line()?;
             }
-            KeyCode::CtrlA | KeyCode::CtrlArrowLeft | KeyCode::Home => {
-                terminal.input.move_cursor_start();
+            KeyCode::CtrlD => {
+                terminal.input.delete_next_character();
                 terminal.print_input_line()?;
             }
-            KeyCode::CtrlE | KeyCode::CtrlArrowRight | KeyCode::End => {
-                terminal.input.move_cursor_end();
-                terminal.print_input_line()?;
-            }
-            KeyCode::CtrlD => todo!(),
             KeyCode::CtrlW => {
-                terminal.input.remove_last_word_before_cursor();
+                terminal.input.kill_prev_word();
                 terminal.print_input_line()?;
             }
             KeyCode::CtrlK => {
-                terminal.input.remove_after_cursor();
+                terminal.input.kill_line_to_end();
+                terminal.print_input_line()?;
+            }
+            KeyCode::CtrlY => {
+                terminal.input.yank();
                 terminal.print_input_line()?;
             }
             KeyCode::CtrlU => {
                 terminal.clear_input()?;
             }
-            KeyCode::CtrlY => {
-                terminal.input.restore();
+            KeyCode::CtrlA | KeyCode::CtrlArrowLeft | KeyCode::Home => {
+                terminal.input.go_to_beginning();
+                terminal.print_input_line()?;
+            }
+            KeyCode::CtrlE | KeyCode::CtrlArrowRight | KeyCode::End => {
+                terminal.input.go_to_end();
                 terminal.print_input_line()?;
             }
             KeyCode::ArrowLeft | KeyCode::CtrlB => {
-                terminal.input.move_cursor_prev();
+                terminal.input.go_backwards_one_character();
                 terminal.print_input_line()?;
             }
             KeyCode::ArrowRight | KeyCode::CtrlF => {
-                terminal.input.move_cursor_next();
+                terminal.input.go_forward_one_character();
                 terminal.print_input_line()?;
             }
             KeyCode::ArrowUp => {

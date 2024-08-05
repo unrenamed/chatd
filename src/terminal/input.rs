@@ -62,8 +62,8 @@ impl TerminalInput {
         self.state.display_width
     }
 
-    // Restore previous state from snapshot
-    pub fn restore(&mut self) {
+    // Re-insert ('yank') previous state from snapshot
+    pub fn yank(&mut self) {
         if let Some(snapshot) = &self.snapshot {
             self.state = snapshot.clone();
             self.clear_snapshot();
@@ -83,7 +83,7 @@ impl TerminalInput {
     }
 
     // Move cursor to the next character
-    pub fn move_cursor_next(&mut self) {
+    pub fn go_forward_one_character(&mut self) {
         if self.state.cursor_char_pos < self.state.char_count {
             self.state.cursor_char_pos += 1;
             self.calc_new_cursor_byte_pos();
@@ -91,21 +91,21 @@ impl TerminalInput {
     }
 
     // Move cursor to the previous character
-    pub fn move_cursor_prev(&mut self) {
+    pub fn go_backwards_one_character(&mut self) {
         if self.state.cursor_char_pos > 0 {
             self.state.cursor_char_pos -= 1;
             self.calc_new_cursor_byte_pos();
         }
     }
 
-    // Move cursor to the start of line
-    pub fn move_cursor_start(&mut self) {
+    // Move cursor to the beginning of line
+    pub fn go_to_beginning(&mut self) {
         self.state.cursor_char_pos = 0;
         self.state.cursor_byte_pos = 0;
     }
 
     // Move cursor to the end of line
-    pub fn move_cursor_end(&mut self) {
+    pub fn go_to_end(&mut self) {
         self.state.cursor_char_pos = self.state.char_count;
         self.state.cursor_byte_pos = self.state.text.len();
     }
@@ -134,13 +134,13 @@ impl TerminalInput {
         self.state.display_width = unicode::display_width(&self.state.text);
     }
 
-    // Remove character before cursor position
-    pub fn remove_before_cursor(&mut self) {
+    // Delete one character before cursor position
+    pub fn delete_prev_character(&mut self) {
         if self.state.cursor_char_pos == 0 {
             return; // Nothing to remove if cursor is at start
         }
 
-        self.move_cursor_prev();
+        self.go_backwards_one_character();
 
         let graphemes: Vec<&str> = self.state.text.graphemes(true).collect();
         let remove_len = graphemes[self.state.cursor_char_pos].len();
@@ -151,8 +151,24 @@ impl TerminalInput {
         self.state.display_width = unicode::display_width(&self.state.text);
     }
 
-    // Remove last word before cursor position
-    pub fn remove_last_word_before_cursor(&mut self) {
+    // Delete one character after cursor position
+    pub fn delete_next_character(&mut self) {
+        if self.state.cursor_char_pos == self.state.char_count {
+            return; // Nothing to remove if cursor is at the end of the input
+        }
+
+        let graphemes: Vec<&str> = self.state.text.graphemes(true).collect();
+        let remove_len = graphemes[self.state.cursor_char_pos].len();
+        let start = self.state.cursor_byte_pos;
+
+        self.state.text.drain(start..start + remove_len);
+        self.state.char_count -= 1;
+        self.state.display_width = unicode::display_width(&self.state.text);
+    }
+
+    // Kill last word before cursor position
+    // This action can be recovered using 'yank'
+    pub fn kill_prev_word(&mut self) {
         let prev = self.state.clone();
         let is_word_char = |c: u8| c != b' ';
 
@@ -194,8 +210,9 @@ impl TerminalInput {
         }
     }
 
-    // Remove everything after cursor position
-    pub fn remove_after_cursor(&mut self) {
+    // Kill line after cursor position to the very end
+    // This action can be recovered using 'yank'
+    pub fn kill_line_to_end(&mut self) {
         let prev = self.state.clone();
         let drained = self.state.text.drain(self.state.cursor_byte_pos..).count();
         if drained > 0 {
@@ -231,7 +248,7 @@ impl TerminalInput {
         if let Some(next) = self.history.next() {
             self.state = next.clone();
         } else {
-            self.restore();
+            self.yank();
         }
     }
 
@@ -332,44 +349,44 @@ mod should {
     }
 
     #[test]
-    fn move_cursor_next() {
+    fn go_forward_one_character() {
         let mut input = TerminalInput::default();
         let test_str = "hello 你好 🌍 👨‍👩‍👧‍👦";
         input.insert_before_cursor(test_str.as_bytes());
-        input.move_cursor_start();
-        input.move_cursor_next();
+        input.go_to_beginning();
+        input.go_forward_one_character();
         assert_eq!(input.cursor_char_pos(), 1);
         assert_eq!(input.cursor_byte_pos(), 1);
     }
 
     #[test]
-    fn move_cursor_prev() {
+    fn go_backwards_one_character() {
         let mut input = TerminalInput::default();
         let test_str = "hello 你好 🌍 👨‍👩‍👧‍👦";
         input.insert_before_cursor(test_str.as_bytes());
-        input.move_cursor_end();
-        input.move_cursor_prev();
+        input.go_to_end();
+        input.go_backwards_one_character();
         assert_eq!(input.cursor_char_pos(), 11);
         assert_eq!(input.cursor_byte_pos(), 18);
     }
 
     #[test]
-    fn move_cursor_to_start() {
+    fn go_to_beginning() {
         let mut input = TerminalInput::default();
         let test_str = "hello 你好 🌍 👨‍👩‍👧‍👦";
         input.insert_before_cursor(test_str.as_bytes());
-        input.move_cursor_start();
+        input.go_to_beginning();
         assert_eq!(input.cursor_char_pos(), 0);
         assert_eq!(input.cursor_byte_pos(), 0);
     }
 
     #[test]
-    fn move_cursor_to_end() {
+    fn go_to_end() {
         let mut input = TerminalInput::default();
         let test_str = "hello 你好 🌍 👨‍👩‍👧‍👦";
         input.insert_before_cursor(test_str.as_bytes());
-        input.move_cursor_start();
-        input.move_cursor_end();
+        input.go_to_beginning();
+        input.go_to_end();
         assert_eq!(input.cursor_char_pos(), 12);
         assert_eq!(input.cursor_byte_pos(), test_str.len());
     }
@@ -385,12 +402,12 @@ mod should {
     }
 
     #[test]
-    fn remove_character_before_cursor() {
+    fn delete_prev_character() {
         let mut input = TerminalInput::default();
         let test_str = "hello world";
         input.insert_before_cursor(test_str.as_bytes());
-        input.move_cursor_end();
-        input.remove_before_cursor();
+        input.go_to_end();
+        input.delete_prev_character();
         let expected_str = "hello worl";
         assert_eq!(input.text(), expected_str);
         assert_eq!(input.cursor_char_pos(), 10);
@@ -400,12 +417,27 @@ mod should {
     }
 
     #[test]
-    fn remove_emoji_before_cursor() {
+    fn delete_next_character() {
+        let mut input = TerminalInput::default();
+        let test_str = "hello world";
+        input.insert_before_cursor(test_str.as_bytes());
+        input.go_to_beginning();
+        input.delete_next_character();
+        let expected_str = "ello world";
+        assert_eq!(input.text(), expected_str);
+        assert_eq!(input.cursor_char_pos(), 0);
+        assert_eq!(input.cursor_byte_pos(), 0);
+        assert_eq!(input.char_count(), 10);
+        assert_eq!(input.display_width(), 10);
+    }
+
+    #[test]
+    fn delete_emoji_before_cursor() {
         let mut input = TerminalInput::default();
         let test_str = "hello 你好 🌍 👨‍👩‍👧‍👦";
         input.insert_before_cursor(test_str.as_bytes());
-        input.move_cursor_end();
-        input.remove_before_cursor();
+        input.go_to_end();
+        input.delete_prev_character();
         let expected_str = "hello 你好 🌍 ";
         assert_eq!(input.text(), expected_str);
         assert_eq!(input.cursor_char_pos(), 11);
@@ -415,12 +447,27 @@ mod should {
     }
 
     #[test]
-    fn remove_last_word_before_cursor() {
+    fn delete_emoji_after_cursor() {
+        let mut input = TerminalInput::default();
+        let test_str = "hello 👨‍👩‍👧‍👦 你好 🌍";
+        input.insert_before_cursor(test_str.as_bytes());
+        input.move_cursor_to(6);
+        input.delete_next_character();
+        let expected_str = "hello  你好 🌍";
+        assert_eq!(input.text(), expected_str);
+        assert_eq!(input.cursor_char_pos(), 6);
+        assert_eq!(input.cursor_byte_pos(), 6);
+        assert_eq!(input.char_count(), 11);
+        assert_eq!(input.display_width(), 14);
+    }
+
+    #[test]
+    fn kill_prev_word() {
         let mut input = TerminalInput::default();
         let test_str = "hello 你好 🌍 wor👨‍👨‍👧‍👧ld";
         input.insert_before_cursor(test_str.as_bytes());
-        input.move_cursor_end();
-        input.remove_last_word_before_cursor();
+        input.go_to_end();
+        input.kill_prev_word();
         let expected_str = "hello 你好 🌍 ";
         assert_eq!(input.text(), expected_str);
         assert_eq!(input.cursor_char_pos(), 11);
@@ -430,12 +477,12 @@ mod should {
     }
 
     #[test]
-    fn remove_everything_after_cursor() {
+    fn kill_line_to_end() {
         let mut input = TerminalInput::default();
         let test_str = "hello 你好 🌍 👨‍👩‍👧‍👦";
         input.insert_before_cursor(test_str.as_bytes());
         input.move_cursor_to(5);
-        input.remove_after_cursor();
+        input.kill_line_to_end();
         let expected_str = "hello";
         assert_eq!(input.text(), expected_str);
         assert_eq!(input.cursor_char_pos(), 5);

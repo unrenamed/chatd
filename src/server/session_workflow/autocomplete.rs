@@ -212,7 +212,7 @@ fn paste_complete_text<H: Clone + Write + CloseHandle + Send>(
     text: &str,
 ) -> anyhow::Result<()> {
     terminal.input.move_cursor_to(end_pos);
-    terminal.input.remove_last_word_before_cursor();
+    terminal.input.kill_prev_word();
     terminal.input.insert_before_cursor(text.as_bytes());
     terminal.input.insert_before_cursor(" ".as_bytes());
     terminal.print_input_line()?;
