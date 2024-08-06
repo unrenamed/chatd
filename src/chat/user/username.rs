@@ -191,7 +191,8 @@ impl std::fmt::Display for UserName {
 
 #[cfg(test)]
 mod should {
-    use rand::{rngs::StdRng, SeedableRng};
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
 
     use super::*;
 
@@ -200,7 +201,8 @@ mod should {
         let seed = [0u8; 32]; // A fixed seed
         let mut rng = StdRng::from_seed(seed);
         let username: UserName = rng.gen();
-        // Since the seed is fixed, the generated username should be consistent across runs
+        // Since the seed is fixed, the generated username should be
+        // consistent across runs
         assert_eq!(username.0, "FearlessKraken735");
     }
 

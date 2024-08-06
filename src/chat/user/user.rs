@@ -184,7 +184,8 @@ mod should {
     use chrono::Utc;
 
     use super::*;
-    use crate::{chat::Theme, pubkey::PubKey};
+    use crate::chat::Theme;
+    use crate::pubkey::PubKey;
 
     fn create_test_user() -> User {
         let username = UserName::from("test_user");
@@ -243,7 +244,8 @@ mod should {
     fn joined_duration() {
         let user = create_test_user();
         let duration = user.joined_duration();
-        assert!(duration.as_secs() < 5); // Assuming the test runs within 5 seconds
+        assert!(duration.as_secs() < 5); // Assuming the test runs
+                                         // within 5 seconds
     }
 
     #[test]

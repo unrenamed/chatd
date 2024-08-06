@@ -22,7 +22,8 @@ struct InputState {
 pub struct TerminalInput {
     state: InputState,                                   // Current input state
     snapshot: Option<InputState>,                        // Snapshot of previous state
-    history: InputHistory<InputState, MAX_HISTORY_SIZE>, // Records the history of inputs made by the user
+    history: InputHistory<InputState, MAX_HISTORY_SIZE>, /* Records the history of inputs made
+                                                          * by the user */
 }
 
 impl Display for TerminalInput {
@@ -154,7 +155,8 @@ impl TerminalInput {
     // Delete one character after cursor position
     pub fn delete_next_character(&mut self) {
         if self.state.cursor_char_pos == self.state.char_count {
-            return; // Nothing to remove if cursor is at the end of the input
+            return; // Nothing to remove if cursor is at the end of
+                    // the input
         }
 
         let graphemes: Vec<&str> = self.state.text.graphemes(true).collect();
@@ -267,14 +269,16 @@ impl TerminalInput {
         self.snapshot = None;
     }
 
-    // Calculate the new byte cursor position based on the current character position
+    // Calculate the new byte cursor position based on the current
+    // character position
     fn calc_new_cursor_byte_pos(&mut self) {
         let graphemes: Vec<&str> = self.state.text.graphemes(true).collect();
         let new_cursor_byte_pos = char_to_byte_pos(&graphemes, self.state.cursor_char_pos);
         self.state.cursor_byte_pos = new_cursor_byte_pos;
     }
 
-    // Calculate the new character cursor position based on the current byte position
+    // Calculate the new character cursor position based on the current
+    // byte position
     fn calc_new_cursor_char_pos(&mut self) {
         let graphemes: Vec<&str> = self.state.text.graphemes(true).collect();
         let new_cursor_char_pos = byte_to_char_pos(&graphemes, self.state.cursor_byte_pos);
@@ -332,7 +336,8 @@ mod should {
         assert_eq!(input.cursor_char_pos(), 12); // "hello 你好 🌍 👨‍👩‍👧‍👦" has 12 graphemes
         assert_eq!(input.cursor_byte_pos(), test_str.len());
         assert_eq!(input.char_count(), 12);
-        assert_eq!(input.display_width(), 16); // display width of text
+        assert_eq!(input.display_width(), 16); // display width of
+                                               // text
     }
 
     #[test]

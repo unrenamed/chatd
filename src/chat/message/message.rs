@@ -155,7 +155,7 @@ impl MessageFormatter for Private {
             cfg.theme().style_username(self.from.username().as_ref()),
             cfg.theme().style_text(&self.message_body()),
             if cfg.bell() {
-                BEL /* emit bell sound in recipient's terminal */
+                BEL // emit bell sound in recipient's terminal
             } else {
                 NULL
             }

@@ -221,10 +221,10 @@ fn paste_complete_text<H: Clone + Write + CloseHandle + Send>(
 
 #[cfg(test)]
 mod should {
-    use crate::{chat::User, pubkey::PubKey};
+    use crate::chat::User;
+    use crate::pubkey::PubKey;
     use mockall::mock;
-    use tokio::sync::mpsc;
-    use tokio::sync::watch;
+    use tokio::sync::{mpsc, watch};
 
     use super::*;
 

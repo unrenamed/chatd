@@ -58,7 +58,8 @@ mod should {
     use tokio::sync::{mpsc, watch};
 
     use super::*;
-    use crate::chat::{user::User, TimestampMode};
+    use crate::chat::user::User;
+    use crate::chat::TimestampMode;
 
     #[tokio::test]
     async fn create_room_member() {
