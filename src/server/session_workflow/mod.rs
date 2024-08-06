@@ -24,16 +24,19 @@ use terminal_keycode::KeyCode;
 
 use crate::terminal::CloseHandle;
 
+#[cfg(not(tarpaulin_include))]
 pub fn autocomplete<H: Clone + Write + CloseHandle + Send>() -> Autocomplete<H> {
     Autocomplete::new()
 }
 
+#[cfg(not(tarpaulin_include))]
 pub fn emacs_key<H: Clone + Write + CloseHandle + Send>(
     code: KeyCode,
 ) -> EmacsKeyBindingExecutor<H> {
     EmacsKeyBindingExecutor::new(code)
 }
 
+#[cfg(not(tarpaulin_include))]
 pub fn env<H: Clone + Write + CloseHandle + Send + 'static>(
     name: String,
     value: String,
@@ -43,6 +46,7 @@ pub fn env<H: Clone + Write + CloseHandle + Send + 'static>(
     EnvParser::new(name, value, command_parser)
 }
 
+#[cfg(not(tarpaulin_include))]
 pub fn input_submit<H: Clone + Write + CloseHandle + Send + 'static>() -> InputRateChecker<H> {
     let command_executor = CommandExecutor::new();
     let command_parser = CommandParser::new(command_executor);
