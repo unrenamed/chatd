@@ -2,14 +2,12 @@ use circular_buffer::CircularBuffer;
 
 use super::message::Message;
 
-const MESSAGE_HISTORY_LEN: usize = 20;
-
 #[derive(Clone)]
-pub struct MessageHistory {
-    buf: CircularBuffer<MESSAGE_HISTORY_LEN, Message>,
+pub struct MessageHistory<const SIZE: usize> {
+    buf: CircularBuffer<SIZE, Message>,
 }
 
-impl MessageHistory {
+impl<const SIZE: usize> MessageHistory<SIZE> {
     pub fn new() -> Self {
         Self {
             buf: CircularBuffer::new(),
@@ -39,7 +37,7 @@ mod tests {
 
     #[test]
     fn test_new_message_history() {
-        let history = MessageHistory::new();
+        let history = MessageHistory::<1>::new();
         assert_eq!(
             history.buf.len(),
             0,
@@ -49,7 +47,7 @@ mod tests {
 
     #[test]
     fn test_push_message() {
-        let mut history = MessageHistory::new();
+        let mut history = MessageHistory::<1>::new();
         let message = get_test_system_message("Hello, World!");
 
         history.push(message.clone().into());
@@ -64,20 +62,16 @@ mod tests {
 
     #[test]
     fn test_push_message_overflow() {
-        let mut history = MessageHistory::new();
-        for i in 0..MESSAGE_HISTORY_LEN {
+        let mut history = MessageHistory::<5>::new();
+        for i in 0..5 {
             history.push(get_test_system_message(&format!("Message {}", i)).into());
         }
-        assert_eq!(
-            history.buf.len(),
-            MESSAGE_HISTORY_LEN,
-            "Buffer should be full"
-        );
+        assert_eq!(history.buf.len(), 5, "Buffer should be full");
 
         history.push(get_test_system_message("Overflow Message").into());
         assert_eq!(
             history.buf.len(),
-            MESSAGE_HISTORY_LEN,
+            5,
             "Buffer should still be full after overflow"
         );
 
@@ -90,7 +84,7 @@ mod tests {
 
     #[test]
     fn test_iterate_messages() {
-        let mut history = MessageHistory::new();
+        let mut history = MessageHistory::<5>::new();
         let messages: Vec<Message> = (0..5)
             .map(|i| get_test_system_message(&format!("Message {}", i)).into())
             .collect();
@@ -110,7 +104,7 @@ mod tests {
 
     #[test]
     fn test_iterate_empty() {
-        let history = MessageHistory::new();
+        let history = MessageHistory::<1>::new();
         let iterated_messages: Vec<_> = history.iter().collect();
         assert_eq!(
             iterated_messages.len(),

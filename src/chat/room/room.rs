@@ -24,7 +24,7 @@ pub struct ChatRoom {
     names: HashMap<UserId, UserName>,
     members: HashMap<UserName, RoomMember>,
     ratelims: HashMap<UserId, RateLimit>,
-    history: MessageHistory,
+    history: MessageHistory<20>,
     motd: String,
     created_at: DateTime<Utc>,
 }

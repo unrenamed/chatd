@@ -14,6 +14,15 @@ use crate::chat::ChatRoom;
 use super::session::{SessionRepositoryEvent, ThinHandler};
 use super::SessionRepository;
 
+/// Maximum size of the internal server event buffer.
+///
+/// Defines the number of session events a `russh` server can buffer
+/// up before blocking the thread. The default size usually handles
+/// all events but can be quickly filled by frequent terminal flushes,
+/// such as when a new user receives room history messages. To avoid
+/// blocking, ensure the buffer size exceeds the room history size.
+const SERVER_EVENT_BUFFER_SIZE: usize = 30;
+
 #[derive(Clone)]
 pub struct ChatServer {
     id_increment: usize,
@@ -52,6 +61,7 @@ impl ChatServer {
         });
 
         let config = Config {
+            event_buffer_size: SERVER_EVENT_BUFFER_SIZE,
             inactivity_timeout: Some(Duration::from_secs(3600)),
             auth_rejection_time: Duration::from_secs(3),
             auth_rejection_time_initial: Some(Duration::from_secs(0)),
