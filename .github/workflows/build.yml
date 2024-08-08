@@ -3,8 +3,11 @@ name: Build
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+    paths:
+      - "src"
+      - ".github/workflows"
+      - "Makefile"
+      - "Cargo.toml"
 
 env:
   CARGO_TERM_COLOR: always
@@ -13,16 +16,23 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Build
-        run: cargo build --verbose
+        run: make build
 
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Test
-        run: cargo test --verbose
+      - uses: actions/checkout@v4
+      - name: Cargo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ./target
+          key: test-cargo-registry
+      - name: Run tests
+        run: make test
 
   coverage:
     runs-on: ubuntu-latest
@@ -30,10 +40,8 @@ jobs:
       image: xd009642/tarpaulin:develop-nightly
       options: --security-opt seccomp=unconfined
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Generate code coverage
-        run: |
-          cargo +nightly tarpaulin --verbose --all-features --workspace --timeout 120 --out Lcov --output-dir ./coverage
+        run: make coverage-lcov
       - name: Upload to coveralls.io
         uses: coverallsapp/github-action@v2
