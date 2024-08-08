@@ -17,13 +17,13 @@ categories = ["command-line-utilities", "network-programming"]
 
 [dependencies]
 futures = "0.3.30"
-russh = { version = "0.43.0", features = ["openssl"] }
-russh-keys = { version = "0.43.0", features = ["openssl"] }
+russh = { version = "0.44.0" }
+russh-keys = { version = "0.44.0" }
 tokio = { version = "1.36.0", features = ["io-std"] }
 anyhow = "1.0.79"
 async-trait = "0.1.77"
 log = "0.4.20"
-crossterm = "0.27.0"
+crossterm = "0.28.1"
 terminal-keycode = "1.1.1"
 rand = "0.8.5"
 fnv = "1.0.7"
@@ -44,5 +44,5 @@ lazy_static = "1.5.0"
 
 [dev-dependencies]
 assert_fs = "1.1.1"
-mockall = "0.12.1"
+mockall = "0.13.0"
 unic-emoji-char = "0.9.0"
