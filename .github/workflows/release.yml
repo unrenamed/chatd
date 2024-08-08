@@ -99,19 +99,11 @@ jobs:
             TAG=$GITHUB_SHA
           fi
           echo "TAG=$TAG" >> $GITHUB_ENV
-      - name: Add vendored `openssl` to Rust dependencies
-        run: |
-          # For cross-compilation, manual fine-tuning of OpenSSL libraries and dependencies 
-          # is required per target. Instead, we enable the "vendored" feature to have 
-          # "openssl-src" compile and statically link to a copy of OpenSSL. While this eases 
-          # configuration, it comes with a trade-off: the final binary size increases by 1.5 times, 
-          # from 5.8MB to 8.9MB (unarchived binary) in our tests (tested on ARM64 macOS).
-          cargo add openssl --features vendored
       - name: Run build
         run: make release TARGET=${{ env.TARGET }}
       - name: List target
         shell: bash
-        run: find ./target
+        run: ls -R ./target
       - name: Compress
         shell: bash
         run: |
