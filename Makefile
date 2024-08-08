@@ -7,7 +7,7 @@ test:
 	cargo test --verbose
 
 release:
-	cargo build --release --verbose $(TARGET_OPTION)
+	cargo build --locked --release --verbose $(TARGET_OPTION)
 
 coverage-lcov:
 	cargo +nightly tarpaulin --verbose --all-features --workspace --timeout 120 --out Lcov --output-dir ./coverage

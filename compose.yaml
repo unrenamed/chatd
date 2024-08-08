@@ -1,0 +1,12 @@
+services:
+  server:
+    container_name: chatd
+    build: .
+    ports:
+      - 2022:2022
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: ~/.ssh/
+        target: /root/.ssh/
+        read_only: true
