@@ -1,8 +1,7 @@
+**/.vscode
+**/.DS_Stores
 /target
-.vscode
-
-# For development env
-coverage
-whitelist
-oplist
-keys/*
+/coverage
+/whitelist
+/oplist
+/keys/*
