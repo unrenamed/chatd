@@ -7,15 +7,13 @@
 
 🚧 Work in Progress! 🚧
 
-An implementation of an SSH server for real-time communication that
-serves a chat room instead of a shell and provides encrypted messaging over
-SSH.
+An implementation of an SSH server for real-time communication that serves a chat room instead of a shell and provides encrypted messaging over SSH.
 
-### Acknowledgements
+## Acknowledgements
 
 This project was greatly influenced by [shazow/ssh-chat](https://github.com/shazow/ssh-chat).
 
-### Core Features
+## Core Features
 
 - [x] Public and private one-on-one conversations
 - [x] Color themes
@@ -27,13 +25,35 @@ This project was greatly influenced by [shazow/ssh-chat](https://github.com/shaz
 - [x] Load user config overrides from ENV
 - [ ] Automatically detect and handle idle users
 
-### Security and Control
+## Security and Control
 
 - [x] Option to allow connections from authorized users only
 - [x] Messaging rate-limit to prevent spam
 - [x] Special commands for operators (`/kick`, `/ban`, `/mute`, etc.)
 
-### Quick start
+## Downloading a release
+
+Pre-built binaries of `chatd` for various platforms, including Windows (x86_64/ARM64), Linux (32-bit/x86_64/ARM64), and macOS (x86_64/ARM64), are available via [GitHub Releases](https://github.com/unrenamed/chatd/releases). These binaries are automatically generated with every tagged commit.
+
+If you’re a Rust developer with Cargo installed, you can skip the download and install the daemon directly from [crates.io](https://crates.io/): `cargo install chatd`
+
+## Compiling / Developing
+
+To build the daemon from source, follow these steps:
+
+```bash
+$ git clone git@github.com:unrenamed/chatd.git
+$ cd chatd
+$ make release
+$ ./target/release/chatd --version
+chatd 0.1.0
+```
+
+For ongoing development, you can use [`Makefile`](./Makefile) for common tasks, or directly invoke `cargo <command>` if the required make rule is missing.
+
+Additionally, if you prefer containerized development or deployment, we've provided a [`Dockerfile`](./Dockerfile) and [`compose.yaml`](./compose.yaml) to easily run `chatd` within a Docker container.
+
+## Quick start
 
 ```console
 chatd is an implementation of an SSH server for real-time communication that
@@ -54,26 +74,38 @@ Options:
   -V, --version           Print version
 ```
 
-### Environment Variables
+Now, run:
+
+```bash
+$ chatd
+```
+
+This will run the daemon listening on the default port and create a temporary ed25519 key to identify server with. For production use case, you should bind a generated key like this:
+
+```bash
+$ chatd -i ~/.ssh/id_dsa
+```
+
+## Environment Variables
 
 Due to the lack of persistent storage for user configurations in chatd (which is intentional), users need to reapply their settings each time they connect. This can be quite inconvenient, don't you think?
 
 Using <b>environment variables</b> can solve this problem.
 
-#### `CHATD_THEME`
+### `CHATD_THEME`
 
 This variable lets you set the theme for your session. Instead of manually configuring it by running `/theme hacker`, you can do it like this:
 
 ```bash
-$ ssh -o SetEnv "CHATD_THEME=hacker" username@host
+$ ssh -o SetEnv "CHATD_THEME=hacker" username@<your_server_hostname>
 ```
 
-#### `CHATD_TIMESTAMP`
+### `CHATD_TIMESTAMP`
 
 This variable enables the logging of a datetime or time prefix next to each received message. Instead of running `/timestamp datetime` manually, you can set it like this before connecting:
 
 ```bash
-$ ssh -o SetEnv "CHATD_TIMESTAMP=datetime" username@host
+$ ssh -o SetEnv "CHATD_TIMESTAMP=datetime" username@<your_server_hostname>
 ```
 
 If you find setting extra options to `ssh` command tiresome, you can use a configuration file supported by your ssh client. For the OpenSSH client, there is `.ssh/config` file. If you don't have one, feel free to create and provide r-w access `chmod 600 .ssh/config`.
@@ -81,17 +113,17 @@ If you find setting extra options to `ssh` command tiresome, you can use a confi
 Now add the following lines to the config file:
 
 ```bash
-Host host
+Host <your_server_hostname>
     SendEnv CHATD_*
 ```
 
 Now, add the environment variables to your shell profile. Then, you can simply run:
 
 ```bash
-$ ssh username@host
+$ ssh username@<your_server_hostname>
 ```
 
-### Autocomplete
+## Autocomplete
 
 `chatd`'s autocomplete is designed to be intuitive and convenient for terminal users, recognizing whether you're completing a command, its subcommand, or their arguments.
 
