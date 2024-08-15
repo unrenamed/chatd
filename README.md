@@ -5,8 +5,6 @@
 
 # chatd
 
-🚧 Work in Progress! 🚧
-
 An implementation of an SSH server for real-time communication that serves a chat room instead of a shell and provides encrypted messaging over SSH.
 
 ## Acknowledgements
