@@ -46,7 +46,7 @@ $ git clone git@github.com:unrenamed/chatd.git
 $ cd chatd
 $ make release
 $ ./target/release/chatd --version
-chatd 0.1.0
+chatd 0.2.0
 ```
 
 For ongoing development, you can use [`Makefile`](./Makefile) for common tasks, or directly invoke `cargo <command>` if the required make rule is missing.
